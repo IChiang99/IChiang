@@ -21,6 +21,12 @@
 """
 Plotting for PLASMOD.
 """
+from __future__ import annotations
+
+from typing import TYPE_CHECKING, Optional, Tuple
+
+if TYPE_CHECKING:
+    from bluemira.codes.plasmod import Solver
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -31,22 +37,31 @@ from bluemira.display import plot_defaults
 __all__ = ["plot_default_profiles"]
 
 
-def plot_default_profiles(plasmod_solver, show=True, f=None, ax=None):
+def plot_default_profiles(
+    plasmod_solver: Solver,
+    show: bool = True,
+    f: Optional[plt.Figure] = None,
+    ax: Optional[plt.Axes] = None,
+) -> Tuple[plt.Figure, plt.Axes]:
     """
     Plot a default set of profiles from a PLASMOD solver.
 
     Parameters
     ----------
-    plasmod_solver: plasmod.Solver
+    plasmod_solver:
         Solver for which to plot profiles
-    show: bool
+    show:
         Whether or not to show the plot
+    f:
+        Matplotlib figure
+    ax:
+        Array of matplotlib Axes
 
     Returns
     -------
-    f: Figure
+    f:
         Matplotlib figure
-    ax: np.ndarray[Axes]
+    ax:
         Array of matplotlib Axes
     """
     plot_defaults()
@@ -60,17 +75,8 @@ def plot_default_profiles(plasmod_solver, show=True, f=None, ax=None):
     pprime = plasmod_solver.get_profile("pprime")
     ffprime = plasmod_solver.get_profile("ffprime")
 
-    # Actual flux function profiles
-
-    pprime_true_but_wrong = plasmod_solver.plasmod_outputs().pprime
-    pprime_true_but_wrong = plasmod_solver._from_phi_to_psi(pprime_true_but_wrong)
-    ffprime_true_but_wrong = plasmod_solver.plasmod_outputs().ffprime
-    ffprime_true_but_wrong = plasmod_solver._from_phi_to_psi(ffprime_true_but_wrong)
     # Current density profile reconstruction from flux functions
     jpar_recon = 2 * np.pi * (R_0 * pprime + ffprime / (MU_0 * R_0))
-    jpar_recon_true_but_wrong = (
-        2 * np.pi * (R_0 * pprime_true_but_wrong + ffprime_true_but_wrong / (MU_0 * R_0))
-    )
 
     # Temperature profiles
     ti = plasmod_solver.get_profile("Ti")
@@ -86,8 +92,7 @@ def plot_default_profiles(plasmod_solver, show=True, f=None, ax=None):
     ax[0, 1].plot(rho, jpar, label="$j_{||}$")
     ax[0, 1].plot(rho, jbs, label="$j_{BS}$")
     ax[0, 1].plot(rho, jcd, label="$j_{CD}$")
-    ax[0, 1].plot(rho, jpar_recon_true_but_wrong, linestyle="--", label="$j_{p', FF'}$")
-    ax[0, 1].plot(rho, jpar_recon, linestyle="--", label="$j_{p', FF'_{*corr}}$")
+    ax[0, 1].plot(rho, jpar_recon, linestyle="--", label="$j_{p', FF'}$")
     ax[0, 1].set_ylabel("Current density [A/m²]")
 
     # Density profiles
@@ -104,13 +109,11 @@ def plot_default_profiles(plasmod_solver, show=True, f=None, ax=None):
 
     # Flux functions
     ax[0, 2].plot(rho, pprime, label="$p'_{*corr}$")
-    ax[0, 2].plot(rho, pprime_true_but_wrong, linestyle="--", label="$p'$")
     ax[0, 2].set_ylabel("[Pa/Wb]")
     axi: plt.Axes = ax[0, 2]
     axi.ticklabel_format(axis="y", style="scientific", scilimits=(0, 0))
 
     ax[1, 2].plot(rho, ffprime, label="$FF'_{*corr}$")
-    ax[1, 2].plot(rho, ffprime_true_but_wrong, linestyle="--", label="$FF'$")
     ax[1, 2].set_ylabel("[T]")
 
     for axe in ax.flat:

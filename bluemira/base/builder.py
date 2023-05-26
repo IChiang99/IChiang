@@ -30,7 +30,9 @@ from typing import Dict, List, Optional, Type, Union
 
 from bluemira.base.components import Component
 from bluemira.base.parameter_frame import ParameterFrame, make_parameter_frame
+from bluemira.base.reactor import ComponentManager  # noqa: F401 for compatibility
 from bluemira.base.reactor_config import ConfigParams
+from bluemira.base.tools import _timing
 from bluemira.utilities.plot_tools import set_component_view
 
 BuildConfig = Dict[str, Union[int, float, str, "BuildConfig"]]
@@ -46,53 +48,18 @@ def _remove_suffix(s: str, suffix: str) -> str:
     return s
 
 
-class ComponentManager(abc.ABC):
-    """
-    A wrapper around a component tree.
-
-    The purpose of the classes deriving from this is to abstract away
-    the structure of the component tree and provide access to a set of
-    its features. This way a reactor build procedure can be completely
-    agnostic of the structure of component trees, relying instead on
-    a set of methods implemented on concrete `ComponentManager`
-    instances.
-
-    This class can also be used to hold 'construction geometry' that may
-    not be part of the component tree, but was useful in construction
-    of the tree, and could be subsequently useful (e.g., an equilibrium
-    can be solved to get a plasma shape, the equilibrium is not
-    derivable from the plasma component tree, but can be useful in
-    other stages of a reactor build procedure).
-
-    Parameters
-    ----------
-    component_tree: Component
-        The component tree this manager should wrap.
-    """
-
-    def __init__(self, component_tree: Component) -> None:
-        super().__init__()
-        self._component = component_tree
-
-    def component(self) -> Component:
-        """
-        Return the component tree wrapped by this manager.
-        """
-        return self._component
-
-
 class Builder(abc.ABC):
     """
     Base class for component builders.
 
     Parameters
     ----------
-    params: Union[Dict, ParameterFrame]
+    params:
         The parameters required by the builder.
-    build_config: Dict
+    build_config:
         The build configuration for the builder.
-    designer: Optional[Designer]
-        A designer to solve a design problem required by the builder.
+    verbose:
+        control how much logging the designer will output
 
     Notes
     -----
@@ -104,12 +71,17 @@ class Builder(abc.ABC):
         self,
         params: Union[Dict, ParameterFrame, ConfigParams, None],
         build_config: Optional[Dict] = None,
+        *,
+        verbose=True,
     ):
         super().__init__()
         self.params = make_parameter_frame(params, self.param_cls)
         self.build_config = build_config if build_config is not None else {}
         self.name = self.build_config.get(
             "name", _remove_suffix(self.__class__.__name__, "Builder")
+        )
+        self.build = _timing(
+            self.build, "Built in", f"Building {self.name}", debug_info_str=not verbose
         )
 
     @abc.abstractproperty
@@ -130,17 +102,12 @@ class Builder(abc.ABC):
 
         Parameters
         ----------
-        xz: List[Component]
+        xz:
             xz view of component
-        xy: List[Component]
+        xy:
             xy view of component
-        xyz: List[Component]
+        xyz:
             xyz view of component
-
-        Returns
-        -------
-        component
-
         """
         component = Component(self.name)
         component.add_child(Component("xz", children=xz))

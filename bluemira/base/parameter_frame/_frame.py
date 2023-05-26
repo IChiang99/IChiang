@@ -92,6 +92,15 @@ class ParameterFrame:
             except TypeError:
                 self.update_values(new_values)
 
+    def get_values(self, *names: str) -> Tuple[ParameterValueType, ...]:
+        """Get values of a set of Parameters"""
+        try:
+            return tuple(getattr(self, n).value for n in names)
+        except AttributeError:
+            raise AttributeError(
+                f"Parameters {[n for n in names if not hasattr(self, n)]} not in ParameterFrame"
+            )
+
     def update_values(self, new_values: Dict[str, ParameterValueType], source: str = ""):
         """Update the given parameter values."""
         for key, value in new_values.items():
@@ -314,8 +323,7 @@ def _validate_parameter_field(field, member_type: Type) -> Tuple[Type, ...]:
         not hasattr(member_type, "__origin__") or member_type.__origin__ is not Parameter
     ):
         raise TypeError(f"Field '{field}' does not have type Parameter.")
-    value_types = get_args(member_type)
-    return value_types
+    return get_args(member_type)
 
 
 def _validate_units(param_data: Dict, value_type: Iterable[Type]):
@@ -381,16 +389,15 @@ def _convert_angle_units(
 
     Parameters
     ----------
-    modified_unit: pint.Unit
+    modified_unit
         reconstructed unit without the angle
-    orig_unit_str: str
+    orig_unit_str
         the user supplied unit (without spaces)
-    angle_unit: str
+    angle_unit
         the angle unit in `orig_unit`
 
     Returns
     -------
-    pint.Unit;
         the new unit
 
     """
@@ -479,7 +486,7 @@ class EmptyFrame(ParameterFrame):
     Class to represent an empty `ParameterFrame` (one with no Parameters).
 
     Can be used when initializing a
-    :class:`~bluemire.base.reactor_config.ConfigParams` object with no global params.
+    :class:`~bluemira.base.reactor_config.ConfigParams` object with no global params.
     """
 
     def __init__(self) -> None:
@@ -527,7 +534,6 @@ def make_parameter_frame(
 
     Returns
     -------
-    Union[ParameterFrame, None]
         A frame of the type `param_cls`, or `None` if `params` and
         `param_cls` are both `None`.
     """

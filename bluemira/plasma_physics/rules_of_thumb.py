@@ -29,29 +29,30 @@ from bluemira.base.constants import EV_TO_J, K_BOLTZMANN, MU_0
 from bluemira.plasma_physics.collisions import coulomb_logarithm, spitzer_conductivity
 
 
-def estimate_loop_voltage(R_0, B_t, Z_eff, T_e, n_e, q_0):
+def estimate_loop_voltage(
+    R_0: float, B_t: float, Z_eff: float, T_e: float, n_e: float, q_0: float
+) -> float:
     """
     A 0-D estimate of the loop voltage during burn
 
     Parameters
     ----------
-    R_0: float
+    R_0:
         Major radius [m]
-    B_t: float
+    B_t:
         Toroidal field on axis [T]
-    Z_eff: float
+    Z_eff:
         Effective charge [a.m.u.]
-    T_e: float
+    T_e:
         Electron temperature on axis [eV]
-    n_e: float
+    n_e:
         Electron density [1/m^3]
-    q_0: float
+    q_0:
         Safety factor on axis
 
     Returns
     -------
-    v_loop: float
-        Loop voltage during burn [V]
+    Loop voltage during burn [V]
 
     Notes
     -----
@@ -75,3 +76,67 @@ def estimate_loop_voltage(R_0, B_t, Z_eff, T_e, n_e, q_0):
     j_0 = 2 * B_t / (MU_0 * q_0 * R_0)
     v_loop = 2 * np.pi * R_0 * j_0 / sigma
     return v_loop
+
+
+def estimate_Le(A: float, kappa: float) -> float:  # noqa: N802
+    """
+    Estimate the normalised external plasma self-inductance.
+
+    Parameters
+    ----------
+    A:
+        Last closed flux surface aspect ratio
+    kappa:
+        Last closed flux surface elongation
+
+    Returns
+    -------
+    Normalised plasma external inductance
+
+    Notes
+    -----
+    Hirshman and Neilson, 1986
+    https://pubs.aip.org/aip/pfl/article/29/3/790/944223/External-inductance-of-an-axisymmetric-plasma
+    Assuming a LCFS parameterisation as per:
+    :py:func:`bluemira.equilibria.shapes.flux_surface_hirshman`
+    """
+    eps = 1 / A
+    sqrt_eps = np.sqrt(eps)
+
+    a = (
+        (1 + 1.81 * sqrt_eps + 2.05 * eps) * np.log(8 * A)
+        - 2.0
+        - 9.25 * sqrt_eps
+        + 1.21 * eps
+    )
+    b = 0.73 * sqrt_eps * (1 + 2 * eps**4 - 6 * eps**5 + 3.7 * eps**6)
+    return a * (1 - eps) / (1 - eps + b * kappa)
+
+
+def estimate_M(A: float, kappa: float) -> float:  # noqa: N802
+    """
+    Estimate the plasma mutual inductance.
+
+    Parameters
+    ----------
+    A:
+        Last closed flux surface aspect ratio
+    kappa:
+        Last closed flux surface elongation
+
+    Returns
+    -------
+    Plasma mutual inductance
+
+    Notes
+    -----
+    Hirshman and Neilson, 1986
+    https://pubs.aip.org/aip/pfl/article/29/3/790/944223/External-inductance-of-an-axisymmetric-plasma
+    Assuming a LCFS parameterisation as per:
+    :py:func:`bluemira.equilibria.shapes.flux_surface_hirshman`
+    """
+    eps = 1 / A
+
+    c = 1 + 0.98 * eps**2 + 0.49 * eps**4 + 1.47 * eps**6
+    d = 0.25 * eps * (1 + 0.84 * eps - 1.44 * eps**2)
+    return (1 - eps) ** 2 / ((1 - eps) ** 2 * c + d * np.sqrt(kappa))

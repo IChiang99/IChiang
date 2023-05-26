@@ -22,12 +22,18 @@
 """
 Fuel cycle analysis class for Monte Carlo statistics
 """
-from collections.abc import Iterable
+from __future__ import annotations
+
+from typing import TYPE_CHECKING, Dict, Iterable, Union
+
+if TYPE_CHECKING:
+    from bluemira.fuel_cycle.cycle import EUDEMOFuelCycleModel
 
 import matplotlib.pyplot as plt
 import numpy as np
+from rich.progress import track
 
-from bluemira.base.look_and_feel import BluemiraClock, bluemira_warn
+from bluemira.base.look_and_feel import bluemira_warn
 
 __all__ = ["FuelCycleAnalysis"]
 
@@ -38,7 +44,7 @@ class FuelCycleAnalysis:
 
     Parameters
     ----------
-    fuel_cycle_model: FuelCycleModel
+    fuel_cycle_model:
         The model for the fuel cycle on a single timeline
     """
 
@@ -49,7 +55,7 @@ class FuelCycleAnalysis:
         "verbose": False,
     }
 
-    def __init__(self, fuel_cycle_model, **kwargs):
+    def __init__(self, fuel_cycle_model: EUDEMOFuelCycleModel, **kwargs):
         self.model = fuel_cycle_model
 
         for key, value in kwargs.items():
@@ -62,13 +68,13 @@ class FuelCycleAnalysis:
         self.t_d = []
         self.m_dot_release = []
 
-    def run_model(self, timelines):
+    def run_model(self, timelines: Iterable[Dict[str, Union[np.ndarray, int]]]):
         """
         Run the tritium fuel cycle model for each timeline.
 
         Parameters
         ----------
-        timelines : dict
+        timelines:
             Timeline dict from LifeCycle object:
                 DEMO_t : np.array
                     Real time signal in seconds
@@ -82,55 +88,49 @@ class FuelCycleAnalysis:
                     here, along with maintenance outages, etc.)
                 bci : int
                     Blanket change index
-        timelines : list
-            List of timelines dicts described above
         """
         if not isinstance(timelines, Iterable):  # Single timeline
             timelines = [timelines]
 
-        clock = BluemiraClock(len(timelines))
-        for timeline in timelines:
+        for timeline in track(timelines):
             self.model.run(timeline)
-            clock.tock()
             self.m_T_req.append(self.model.m_T_req)
             self.t_d.append(self.model.t_d)
             self.m_dot_release.append(self.model.m_dot_release)
 
-    def get_startup_inventory(self, query="max"):
+    def get_startup_inventory(self, query: str = "max") -> float:
         """
         Get the tritium start-up inventory.
 
         Parameters
         ----------
-        query: str
+        query:
             The type of statistical value to return
             - [min, max, mean, median, 95th]
 
         Returns
         -------
-        m_T_start: float
-            The tritium start-up inventory [kg]
+        The tritium start-up inventory [kg]
         """
         return self._query("m_T_req", query)
 
-    def get_doubling_time(self, query="max"):
+    def get_doubling_time(self, query: str = "max") -> float:
         """
         Get the reactor doubling time.
 
         Parameters
         ----------
-        query: str
+        query:
             The type of statistical value to return
             - [min, max, mean, median, 95th]
 
         Returns
         -------
-        t_d: float
-            The reactor doubling time [years]
+        The reactor doubling time [years]
         """
         return self._query("t_d", s=query)
 
-    def _query(self, p: str, s: str):
+    def _query(self, p: str, s: str) -> float:
         if s == "min":
             return min(self.__dict__[p])
         if s == "max":

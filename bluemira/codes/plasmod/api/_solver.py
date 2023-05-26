@@ -27,7 +27,6 @@ from typing import Any, Dict, Iterable, Union
 import numpy as np
 from scipy.interpolate import interp1d
 
-from bluemira.base.constants import MU_0
 from bluemira.base.parameter_frame import ParameterFrame
 from bluemira.codes.error import CodesError
 from bluemira.codes.interface import CodesSolver
@@ -58,9 +57,9 @@ class Solver(CodesSolver):
 
     Parameters
     ----------
-    params: ParameterFrame
+    params:
         ParameterFrame for plasmod.
-    build_config: Dict[str, Any]
+    build_config:
         Build configuration dictionary.
         Expected keys include:
 
@@ -136,7 +135,7 @@ class Solver(CodesSolver):
 
         Parameters
         ----------
-        run_mode: RunMode
+        run_mode:
             The mode to execute this solver in.
         """
         if isinstance(run_mode, str):
@@ -190,13 +189,12 @@ class Solver(CodesSolver):
 
         Parameters
         ----------
-        profile: str
+        profile:
             A profile to get the data for.
 
         Returns
         -------
-        profile_values: np.ndarray
-            A plasmod profile.
+        A plasmod profile.
 
         Notes
         -----
@@ -210,26 +208,6 @@ class Solver(CodesSolver):
 
         if profile is Profiles.x:
             prof_data = self._x_phi
-        elif profile in [Profiles.pprime, Profiles.ffprime]:
-            jpar_true = self.get_profile("jpar")
-            pprime = getattr(self.plasmod_outputs(), "pprime")
-            pprime = self._from_phi_to_psi(pprime)
-            ffprime = getattr(self.plasmod_outputs(), "ffprime")
-            ffprime = self._from_phi_to_psi(ffprime)
-            jpar_recon = (
-                2
-                * np.pi
-                * (
-                    self.params.R_0.value * pprime
-                    + ffprime / (MU_0 * self.params.R_0.value)
-                )
-            )
-
-            # Scale the flux functions with the correction ratio of the reconstructed
-            # jpar profile. Indiscriminately applied to pprime and ffprime
-            ratio = jpar_true / jpar_recon
-            prof_data = getattr(self.plasmod_outputs(), profile.name)
-            prof_data = ratio * self._from_phi_to_psi(prof_data)
         else:
             prof_data = getattr(self.plasmod_outputs(), profile.name)
             prof_data = self._from_phi_to_psi(prof_data)
@@ -244,13 +222,12 @@ class Solver(CodesSolver):
 
         Parameters
         ----------
-        profiles: Iterable[Profiles]
+        profiles:
             An iterable of Profiles enum values.
 
         Returns
         -------
-        profiles_dict: Dict[Profiles, np.ndarray]
-            A dictionary mapping profile enum to values.
+        A dictionary mapping profile enum to values.
         """
         profiles_dict = {}
         for profile in profiles:
@@ -265,8 +242,7 @@ class Solver(CodesSolver):
 
         Returns
         -------
-        outputs: PlasmodOutputs
-            The scalar plasmod outputs.
+        The scalar plasmod outputs.
         """
         try:
             return self._teardown.outputs

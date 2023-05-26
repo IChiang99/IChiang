@@ -3,7 +3,8 @@
 import json
 import pprint
 from dataclasses import dataclass
-from typing import Dict, Optional, Tuple, Type, TypeVar, Union
+from pathlib import Path
+from typing import Any, Dict, Iterable, Tuple, Type, TypeVar, Union
 
 from bluemira.base.error import ReactorConfigError
 from bluemira.base.look_and_feel import bluemira_warn
@@ -19,7 +20,9 @@ class ConfigParams:
 
 
 _PfT = TypeVar("_PfT", bound=ParameterFrame)
+
 _PARAMETERS_KEY = "params"
+_FILEPATH_PREFIX = "$path:"
 
 
 class ReactorConfig:
@@ -32,25 +35,17 @@ class ReactorConfig:
 
     Parameters
     ----------
-    config_path
+    config_path:
         The path to the config JSON file or a dict of the data.
-
-    global_params_type
+    global_params_type:
         The ParameterFrame type for the global params.
-
-    global_params_path
-        A path to a JSON file
-        holding the global params or a dict of the params.
-
-    warn_on_duplicate_keys
+    warn_on_duplicate_keys:
         Print a warning when duplicate keys are found,
         whose value will be overwritten.
-
-    warn_on_empty_local_params
+    warn_on_empty_local_params:
         Print a warning when the local params for some args are empty,
         when calling params_for(args)
-
-    warn_on_empty_config
+    warn_on_empty_config:
         Print a warning when the config for some args are empty,
         when calling config_for(args)
 
@@ -92,9 +87,8 @@ class ReactorConfig:
 
     def __init__(
         self,
-        config_path: Union[str, dict],
+        config_path: Union[str, Path, dict],
         global_params_type: Type[_PfT],
-        global_params_path: Optional[Union[str, dict]] = None,
         warn_on_duplicate_keys: bool = True,
         warn_on_empty_local_params: bool = True,
         warn_on_empty_config: bool = True,
@@ -103,20 +97,15 @@ class ReactorConfig:
         self.warn_on_empty_local_params = warn_on_empty_local_params
         self.warn_on_empty_config = warn_on_empty_config
 
-        self.config_data = ReactorConfig._read_or_return(config_path)
+        config_data = self._read_or_return(config_path)
+        if not isinstance(config_path, dict):
+            self._expand_paths_in_dict(config_data, Path(config_path).parent)
 
-        if global_params_path is None:
-            self.global_params = make_parameter_frame(
-                self.config_data.get(_PARAMETERS_KEY, {}),
-                global_params_type,
-            )
-        else:
-            self.global_params: _PfT = make_parameter_frame(
-                ReactorConfig._read_or_return(
-                    global_params_path,
-                ),
-                global_params_type,
-            )
+        self.config_data = config_data
+        self.global_params = make_parameter_frame(
+            self.config_data.get(_PARAMETERS_KEY, {}),
+            global_params_type,
+        )
 
         if not self.global_params:
             bluemira_warn("Empty global params")
@@ -137,9 +126,9 @@ class ReactorConfig:
 
         Parameters
         ----------
-        component_name: str
+        component_name:
             The component name, must match a key in the config
-        *args
+        *args:
             Optionally, specify the keys of nested attributes.
 
             This will hoist the values defined in the nested attributes
@@ -150,13 +139,12 @@ class ReactorConfig:
 
         Returns
         -------
-        ConfigParams
-            Holds the global_params (from `self.global_params`)
-            and the extracted local_params.
+        Holds the global_params (from `self.global_params`)
+        and the extracted local_params.
 
-            Use the
-            :func:`~bluemira.base.parameter_frame._frame.make_parameter_frame`
-            helper function to convert it into a typed ParameterFrame.
+        Use the
+        :func:`~bluemira.base.parameter_frame._frame.make_parameter_frame`
+        helper function to convert it into a typed ParameterFrame.
         """
         args = (component_name,) + args
         self._check_args_are_strings(args)
@@ -182,9 +170,9 @@ class ReactorConfig:
 
         Parameters
         ----------
-        component_name: str
+        component_name:
             The component name, must match a key in the config
-        *args
+        *args:
             Optionally, specify the keys of nested attributes.
 
             This will hoist the values defined in the nested attributes
@@ -194,8 +182,7 @@ class ReactorConfig:
 
         Returns
         -------
-        dict
-            The extracted config.
+        The extracted config.
         """
         args = (component_name,) + args
         self._check_args_are_strings(args)
@@ -207,16 +194,17 @@ class ReactorConfig:
         return _return
 
     @staticmethod
-    def _read_or_return(dict_or_str_path: Union[str, dict]) -> Dict:
-        if isinstance(dict_or_str_path, str):
-            return ReactorConfig._read_json_file(dict_or_str_path)
-        elif isinstance(dict_or_str_path, dict):
-            return dict_or_str_path
-        else:
-            raise ReactorConfigError("Invalid config_path")
+    def _read_or_return(config_path: Union[str, Path, dict]) -> Dict:
+        if isinstance(config_path, (str, Path)):
+            return ReactorConfig._read_json_file(config_path)
+        elif isinstance(config_path, dict):
+            return config_path
+        raise ReactorConfigError(
+            f"config_path must be either a dict, a Path object, or a string, found {type(config_path)}."
+        )
 
     @staticmethod
-    def _read_json_file(path: str) -> dict:
+    def _read_json_file(path: Union[Path, str]) -> dict:
         with open(path, "r") as f:
             return json.load(f)
 
@@ -235,10 +223,61 @@ class ReactorConfig:
                 f"'{shared_key}' in {arg} wil be overwritten with {existing_value}"
             )
 
-    def _check_args_are_strings(self, args):
+    def _check_args_are_strings(self, args: Iterable[str]):
         for a in args:
             if not isinstance(a, str):
                 raise ReactorConfigError("args must be strings")
+
+    def _expand_paths_in_dict(self, d: Dict[str, Any], rel_path: Path):
+        """
+        Expand all file paths by replacing their values with the json file's contents.
+
+        Notes
+        -----
+            This mutates the passed in dict.
+        """
+        for k in d:
+            d[k], rel_path_from = self._extract_and_expand_file_data_if_needed(
+                d[k], rel_path
+            )
+            if isinstance(d[k], dict):
+                self._expand_paths_in_dict(d[k], rel_path_from)
+
+    def _extract_and_expand_file_data_if_needed(
+        self, value: Any, rel_path: Path
+    ) -> Tuple[Union[Any, dict], str]:
+        """
+        Returns the file data and the path to the file if value is a path.
+
+        Otherwise, returns value and rel_path that was passed in.
+
+        rel_path is the path to the file that the value is in.
+
+        Notes
+        -----
+        If the value is not a path, returns the value and the passed in rel_path.
+        """
+        if not isinstance(value, str):
+            return value, rel_path
+        if not value.startswith(_FILEPATH_PREFIX):
+            return value, rel_path
+
+        # remove _FILEPATH_PREFIX
+        f_path = value[len(_FILEPATH_PREFIX) :]
+
+        # if the path does not start with a /, it is considered a relative path,
+        # relative to the file the path is in (i.e. rel_path)
+        if not f_path.startswith("/"):
+            f_path = rel_path / f_path
+        else:
+            f_path = Path(f_path)
+
+        # check if file exists
+        if not f_path.is_file():
+            raise FileNotFoundError(f"Cannot find file {f_path}")
+
+        f_data = self._read_json_file(f_path)
+        return f_data, f_path.parent
 
     def _extract(self, arg_keys: Tuple[str], is_config: bool) -> dict:
         extracted = {}
@@ -246,6 +285,7 @@ class ReactorConfig:
         # this routine is designed not to copy any dict's while parsing
 
         current_layer = self.config_data
+
         for next_idx, current_arg_key in enumerate(arg_keys, start=1):
             current_layer = current_layer.get(current_arg_key, {})
             next_arg_key = arg_keys[next_idx] if next_idx < len(arg_keys) else None
@@ -255,6 +295,13 @@ class ReactorConfig:
                 # if doing a params extraction,
                 # get the values from the _PARAMETERS_KEY
                 to_extract = current_layer.get(_PARAMETERS_KEY, {})
+
+            if not isinstance(to_extract, dict):
+                raise ReactorConfigError(
+                    f"Arg {current_arg_key} is too specific, "
+                    "it must either be another JSON object "
+                    "or a path to a JSON file."
+                )
 
             # add all keys not in extracted already
             # if doing a config, ignore the "params" (_PARAMETERS_KEY)

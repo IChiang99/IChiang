@@ -25,17 +25,7 @@ Module containing the base Component class.
 
 from __future__ import annotations
 
-from typing import (
-    TYPE_CHECKING,
-    Any,
-    Callable,
-    Iterable,
-    List,
-    Optional,
-    Sized,
-    Tuple,
-    Union,
-)
+from typing import TYPE_CHECKING, Any, Callable, Iterable, List, Optional, Tuple, Union
 
 import anytree
 from anytree import NodeMixin, RenderTree
@@ -99,7 +89,11 @@ class Component(NodeMixin, Plottable, DisplayableCAD):
         """
         return self.name + " (" + self.__class__.__name__ + ")"
 
-    def filter_components(self, names: List[str]):
+    def filter_components(
+        self,
+        names: Iterable[str],
+        filter_: Optional[Callable[[Component], bool]] = None,
+    ):
         """
         Removes all components from the tree, starting at this component,
         that are siblings of each component specified in `names`
@@ -107,12 +101,11 @@ class Component(NodeMixin, Plottable, DisplayableCAD):
 
         Parameters
         ----------
-        names: List[str]
+        names:
             The list of names of each component to search for.
-
-        Returns
-        -------
-        None
+        filter_:
+            A callable to filter Components from the Component tree,
+            returning True keeps the node False removes it
 
         Notes
         -----
@@ -135,6 +128,10 @@ class Component(NodeMixin, Plottable, DisplayableCAD):
                     if c_sib.name not in names:
                         c_sib.parent = None
 
+                for c_child in c.descendants:
+                    if filter_ is not None and not filter_(c_child):
+                        c_child.parent = None
+
     def tree(self) -> str:
         """
         Get the tree of descendants of this instance.
@@ -154,7 +151,7 @@ class Component(NodeMixin, Plottable, DisplayableCAD):
 
         Parameters
         ----------
-        parent: Optional[Component]
+        parent:
             The component to set as the copy's parent
 
         Returns
@@ -188,7 +185,7 @@ class Component(NodeMixin, Plottable, DisplayableCAD):
 
         Parameters
         ----------
-        parent: Optional[Component]
+        parent:
             The component to set as the copied children's parent
 
         Returns
@@ -203,25 +200,24 @@ class Component(NodeMixin, Plottable, DisplayableCAD):
 
     def get_component(
         self, name: str, first: bool = True, full_tree: bool = False
-    ) -> Union["Component", Tuple[Component], None]:
+    ) -> Union[Component, Tuple[Component], None]:
         """
         Find the components with the specified name.
 
         Parameters
         ----------
-        name: str
+        name:
             The name of the component to search for.
-        first: bool
+        first:
             If True, only the first element is returned, by default True.
-        full_tree: bool
+        full_tree:
             If True, searches the tree from the root, else searches from this node, by
             default False.
 
         Returns
         -------
-        found_components: Union[Component, List[Component]]
-            The first component of the search if first is True, else all components
-            matching the search.
+        The first component of the search if first is True, else all components
+        matching the search.
 
         Notes
         -----
@@ -233,27 +229,29 @@ class Component(NodeMixin, Plottable, DisplayableCAD):
         )
 
     def get_component_properties(
-        self, properties: Union[Sized[str], str], first=True, full_tree=False
+        self,
+        properties: Union[Iterable[str], str],
+        first: bool = True,
+        full_tree: bool = False,
     ) -> Union[Tuple[List[Any]], List[Any], Any]:
         """
         Get properties from a component
 
         Parameters
         ----------
-        name: str
-            The name of the component to search for.
-        first: bool
+        properties:
+            properties to extract from component tree
+        first:
             If True, only the first element is returned, by default True.
-        full_tree: bool
+        full_tree:
             If True, searches the tree from the root, else searches from this node, by
             default False.
 
         Returns
         -------
-        properties: Union[Tuple[List[Any]], List[Any], Any]
-            If multiple properties specified returns a tuple of the list of properties,
-            otherwise returns a list of the property.
-            If only one node has the property returns the value(s).
+        If multiple properties specified returns a tuple of the list of properties,
+        otherwise returns a list of the property.
+        If only one node has the property returns the value(s).
 
         Notes
         -----
@@ -282,7 +280,9 @@ class Component(NodeMixin, Plottable, DisplayableCAD):
             ]
             return tuple(map(list, zip(*node_properties)))
 
-    def _get_thing(self, filter_: Callable, first: bool, full_tree: bool):
+    def _get_thing(
+        self, filter_: Union[Callable, None], first: bool, full_tree: bool
+    ) -> Union[Component, Tuple[Component], None]:
         found_nodes = anytree.search.findall(
             self.root if full_tree else self, filter_=filter_
         )
@@ -298,13 +298,12 @@ class Component(NodeMixin, Plottable, DisplayableCAD):
 
         Parameters
         ----------
-        child: Component
+        child:
             The child to be added
 
         Returns
         -------
-        self: Component
-            This component.
+        This component.
         """
         # TODO: Support merge_trees here too.
         if child in self.children or child.name in (ch.name for ch in self.children):
@@ -317,19 +316,18 @@ class Component(NodeMixin, Plottable, DisplayableCAD):
         self,
         children: Optional[Union[Component, List[Component]]],
         merge_trees: bool = False,
-    ):
+    ) -> Optional[Component]:
         """
         Add multiple children to this node
 
         Parameters
         ----------
-        children: List[Component]
+        children:
             The children to be added
 
         Returns
         -------
-        self: Component
-            This component.
+        This component.
         """
         if children is None:
             return
@@ -341,7 +339,6 @@ class Component(NodeMixin, Plottable, DisplayableCAD):
             return
 
         duplicates = []
-        child: Component
         for idx, child in reversed(list(enumerate(children))):
             existing = self.get_component(child.name)
             if existing is not None:
@@ -372,6 +369,19 @@ class Component(NodeMixin, Plottable, DisplayableCAD):
 class PhysicalComponent(Component):
     """
     A physical component. It includes shape and materials.
+
+    Parameters
+    ----------
+    name:
+        Name of the PhysicalComponent
+    shape:
+        Geometry of the PhysicalComponent
+    material:
+        Material of the PhysicalComponent
+    parent:
+        Parent of the PhysicalComponent
+    children:
+        Children of the PhysicalComponent
     """
 
     def __init__(
@@ -379,8 +389,8 @@ class PhysicalComponent(Component):
         name: str,
         shape: BluemiraGeo,
         material: Any = None,
-        parent: Component = None,
-        children: Component = None,
+        parent: Optional[Component] = None,
+        children: Optional[List[Component]] = None,
     ):
         super().__init__(name, parent, children)
         self.shape = shape
@@ -446,8 +456,8 @@ class MagneticComponent(PhysicalComponent):
         shape: BluemiraGeo,
         material: Any = None,
         conductor: Any = None,
-        parent: Component = None,
-        children: Component = None,
+        parent: Optional[Component] = None,
+        children: Optional[List[Component]] = None,
     ):
         super().__init__(name, shape, material, parent, children)
         self.conductor = conductor
@@ -493,25 +503,23 @@ class MagneticComponent(PhysicalComponent):
 
 
 def get_properties_from_components(
-    comps: Union[Component, Iterable[Component]], properties: Union[str, Sized[str]]
-):
+    comps: Union[Component, Iterable[Component]], properties: Union[str, Iterable[str]]
+) -> Union[Tuple[List[Any]], List[Any], Any]:
     """
     Get properties from Components
 
     Parameters
     ----------
-    comps: Union[Component, Iterable[Component]])
+    comps:
         A component or list of components
-    properties: Union[str, Sized[str]]
+    properties:
         properties to collect
 
     Returns
     -------
-    properties: Union[Tuple[List[Any]], List[Any], Any]
-        If multiple properties specified returns a tuple of the list of properties,
-        otherwise returns a list of the property.
-        If only one node has the property returns the value(s).
-
+    If multiple properties specified returns a tuple of the list of properties,
+    otherwise returns a list of the property.
+    If only one node has the property returns the value(s).
     """
     if isinstance(properties, str):
         properties = [properties]

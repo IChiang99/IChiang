@@ -20,24 +20,290 @@
 # License along with bluemira; if not, see <https://www.gnu.org/licenses/>.
 """Base class for a Bluemira reactor."""
 
-from typing import List, Optional, Type
+import abc
+import time
+from typing import Any, Callable, List, Optional, Tuple, Type, Union
 from warnings import warn
 
+import anytree
 from rich.progress import track
 
-from bluemira.base.builder import ComponentManager
 from bluemira.base.components import Component
-from bluemira.base.error import ReactorError
+from bluemira.base.error import ComponentError
 from bluemira.base.look_and_feel import bluemira_print
 from bluemira.builders.tools import circular_pattern_component
 from bluemira.display.displayer import ComponentDisplayer
 from bluemira.display.plotter import ComponentPlotter
+from bluemira.materials.material import SerialisedMaterial, Void
 
 _PLOT_DIMS = ["xy", "xz"]
 _CAD_DIMS = ["xy", "xz", "xyz"]
 
 
-class Reactor:
+class BaseManager(abc.ABC):
+    """
+    A base wrapper around a component tree or component trees.
+
+    The purpose of the classes deriving from this is to abstract away
+    the structure of the component tree and provide access to a set of
+    its features. This way a reactor build procedure can be completely
+    agnostic of the structure of component trees.
+
+    """
+
+    @abc.abstractmethod
+    def component(self) -> Component:
+        """
+        Return the component tree wrapped by this manager.
+        """
+
+    @abc.abstractmethod
+    def show_cad(
+        self,
+        *dims: str,
+        filter_: Union[Callable[[Component], bool], None],
+        **kwargs,
+    ):
+        """
+        Show the CAD build of the component.
+
+        Parameters
+        ----------
+        *dims:
+            The dimension of the reactor to show, typically one of
+            'xz', 'xy', or 'xyz'. (default: 'xyz')
+        filter_:
+            A callable to filter Components from the Component tree,
+            returning True keeps the node False removes it
+        """
+
+    @abc.abstractmethod
+    def plot(self, *dims: str, filter_: Union[Callable[[Component], bool], None]):
+        """
+        Plot the component.
+
+        Parameters
+        ----------
+        *dims:
+            The dimension(s) of the reactor to show, 'xz' and/or 'xy'.
+            (default: 'xz')
+        filter_:
+            A callable to filter Components from the Component tree,
+            returning True keeps the node False removes it
+        """
+
+    def tree(self) -> str:
+        """
+        Get the component tree
+        """
+        return self.component().tree()
+
+    def _validate_cad_dims(self, *dims: str, **kwargs) -> Tuple[str, ...]:
+        """
+        Validate showable CAD dimensions
+        """
+        # give dims_to_show a default value
+        dims_to_show = ("xyz",) if len(dims) == 0 else dims
+
+        # if a kw "dim" is given, it is only used
+        if kw_dim := kwargs.pop("dim", None):
+            warn(
+                "Using kwarg 'dim' is no longer supported. "
+                "Simply pass in the dimensions you would like to show, e.g. show_cad('xz')",
+                category=DeprecationWarning,
+            )
+            dims_to_show = (kw_dim,)
+        for dim in dims_to_show:
+            if dim not in _CAD_DIMS:
+                raise ComponentError(
+                    f"Invalid plotting dimension '{dim}'."
+                    f"Must be one of {str(_CAD_DIMS)}"
+                )
+
+        return dims_to_show
+
+    def _validate_plot_dims(self, *dims) -> Tuple[str, ...]:
+        """
+        Validate showable plot dimensions
+        """
+        # give dims_to_show a default value
+        dims_to_show = ("xz",) if len(dims) == 0 else dims
+
+        for dim in dims_to_show:
+            if dim not in _PLOT_DIMS:
+                raise ComponentError(
+                    f"Invalid plotting dimension '{dim}'."
+                    f"Must be one of {str(_PLOT_DIMS)}"
+                )
+
+        return dims_to_show
+
+    def _filter_tree(
+        self,
+        comp: Component,
+        dims_to_show: Tuple[str, ...],
+        filter_: Union[Callable[[Component], bool], None],
+    ) -> Component:
+        """
+        Filter a component tree
+
+        Notes
+        -----
+        A copy of the component tree must be made
+        as filtering would mutate the ComponentMangers' underlying component trees
+        """
+        comp_copy = comp.copy()
+        comp_copy.filter_components(dims_to_show, filter_)
+        return comp_copy
+
+    def _plot_dims(
+        self,
+        comp: Component,
+        dims_to_show: Tuple[str, ...],
+        filter_: Union[Callable[[Component], bool], None],
+    ):
+        for i, dim in enumerate(dims_to_show):
+            ComponentPlotter(view=dim).plot_2d(
+                self._filter_tree(comp, dims_to_show, filter_),
+                show=i == len(dims_to_show) - 1,
+            )
+
+
+class FilterMaterial:
+    """
+    Filter nodes by material
+
+    Parameters
+    ----------
+    keep_material:
+       materials to include
+    reject_material:
+       materials to exclude
+
+    """
+
+    def __init__(
+        self,
+        keep_material: Union[
+            Type[SerialisedMaterial], Tuple[Type[SerialisedMaterial]], None
+        ] = None,
+        reject_material: Union[
+            Type[SerialisedMaterial], Tuple[Type[SerialisedMaterial]], None
+        ] = Void,
+    ):
+        super().__setattr__("keep_material", keep_material)
+        super().__setattr__("reject_material", reject_material)
+
+    def __call__(self, node: anytree.Node) -> bool:
+        """Filter node based on material include and exclude rules"""
+        if not hasattr(node, "material"):
+            return True
+        return self._apply_filters(node.material)
+
+    def __setattr__(self, name: str, value: Any):
+        """
+        Override setattr to force immutability
+
+        This method makes the class nearly immutable as no new attributes
+        can be modified or added by standard methods.
+
+        See #2236 discussion_r1191246003 for further details
+        """
+        raise AttributeError(f"{type(self).__name__} is immutable")
+
+    def _apply_filters(
+        self, material: Union[SerialisedMaterial, Tuple[SerialisedMaterial]]
+    ) -> bool:
+        bool_store = True
+
+        if self.keep_material is not None:
+            bool_store = isinstance(material, self.keep_material)
+
+        if self.reject_material is not None:
+            bool_store = not isinstance(material, self.reject_material)
+
+        return bool_store
+
+
+class ComponentManager(BaseManager):
+    """
+    A wrapper around a component tree.
+
+    The purpose of the classes deriving from this is to abstract away
+    the structure of the component tree and provide access to a set of
+    its features. This way a reactor build procedure can be completely
+    agnostic of the structure of component trees, relying instead on
+    a set of methods implemented on concrete `ComponentManager`
+    instances.
+
+    This class can also be used to hold 'construction geometry' that may
+    not be part of the component tree, but was useful in construction
+    of the tree, and could be subsequently useful (e.g., an equilibrium
+    can be solved to get a plasma shape, the equilibrium is not
+    derivable from the plasma component tree, but can be useful in
+    other stages of a reactor build procedure).
+
+    Parameters
+    ----------
+    component_tree:
+        The component tree this manager should wrap.
+    """
+
+    def __init__(self, component_tree: Component) -> None:
+        self._component = component_tree
+
+    def component(self) -> Component:
+        """
+        Return the component tree wrapped by this manager.
+        """
+        return self._component
+
+    def show_cad(
+        self,
+        *dims: str,
+        filter_: Union[Callable[[Component], bool], None] = FilterMaterial(),
+        **kwargs,
+    ):
+        """
+        Show the CAD build of the component.
+
+        Parameters
+        ----------
+        *dims:
+            The dimension of the reactor to show, typically one of
+            'xz', 'xy', or 'xyz'. (default: 'xyz')
+        filter_:
+            A callable to filter Components from the Component tree,
+            returning True keeps the node False removes it
+        """
+        ComponentDisplayer().show_cad(
+            self._filter_tree(
+                self.component(), self._validate_cad_dims(*dims, **kwargs), filter_
+            ),
+            **kwargs,
+        )
+
+    def plot(
+        self,
+        *dims: str,
+        filter_: Union[Callable[[Component], bool], None] = FilterMaterial(),
+    ):
+        """
+        Plot the component.
+
+        Parameters
+        ----------
+        *dims:
+            The dimension(s) of the reactor to show, 'xz' and/or 'xy'.
+            (default: 'xz')
+        filter_:
+            A callable to filter Components from the Component tree,
+            returning True keeps the node False removes it
+        """
+        self._plot_dims(self.component(), self._validate_plot_dims(*dims), filter_)
+
+
+class Reactor(BaseManager):
     """
     Base class for reactor definitions.
 
@@ -57,10 +323,12 @@ class Reactor:
 
     Parameters
     ----------
-    name: str
+    name:
         The name of the reactor. This will be the label for the top
         level :obj:`bluemira.base.components.Component` in the reactor
         tree.
+    n_sectors:
+        Number of sectors in a reactor
 
     Example
     -------
@@ -86,6 +354,7 @@ class Reactor:
     def __init__(self, name: str, n_sectors: int):
         self.name = name
         self.n_sectors = n_sectors
+        self.start_time = time.perf_counter()
 
     def component(
         self,
@@ -93,6 +362,12 @@ class Reactor:
     ) -> Component:
         """Return the component tree."""
         return self._build_component_tree(with_components)
+
+    def time_since_init(self) -> float:
+        """
+        Get time since initialisation
+        """
+        return time.perf_counter() - self.start_time
 
     def _build_component_tree(
         self,
@@ -123,7 +398,7 @@ class Reactor:
         self,
         reactor_component: Component,
         with_components: Optional[List[ComponentManager]] = None,
-        n_sectors: Optional[int] = None,
+        n_sectors: int = 1,
     ):
         xyzs = reactor_component.get_component(
             "xyz",
@@ -146,29 +421,12 @@ class Reactor:
                 degree=(360 / self.n_sectors) * n_sectors,
             )
 
-    def _filter_copy_comps(
-        self,
-        dims_to_show: List[str],
-        with_components: Optional[List[ComponentManager]] = None,
-    ):
-        """
-        Get a filtered copy of the Reactor components for display purposes
-        """
-        comp = self.component(with_components)
-
-        # A copy of the component tree must be made
-        # as filtering would mutate the ComponentMangers' underlying component trees
-        # self.component (above) only creates a new root node for this reactor,
-        # not a new component tree.
-        comp_copy = comp.copy()
-        comp_copy.filter_components(dims_to_show)
-        return comp_copy
-
     def show_cad(
         self,
         *dims: str,
         with_components: Optional[List[ComponentManager]] = None,
         n_sectors: Optional[int] = None,
+        filter_: Union[Callable[[Component], bool], None] = FilterMaterial(),
         **kwargs,
     ):
         """
@@ -185,40 +443,36 @@ class Reactor:
         n_sectors:
             The number of sectors to construct when displaying CAD for xyz
             Defaults to None, which means show "all" sectors.
+        filter_:
+            A callable to filter Components from the Component tree,
+            returning True keeps the node False removes it
         """
-        if n_sectors is None:
-            n_sectors = self.n_sectors
+        dims_to_show = self._validate_cad_dims(*dims, **kwargs)
 
-        # give dims_to_show a default value
-        dims_to_show = ("xyz",) if len(dims) == 0 else dims
-
-        # if a kw "dim" is given, it is only used
-        if kw_dim := kwargs.pop("dim", None):
-            warn(
-                "Using kwarg 'dim' is no longer supported. "
-                "Simply pass in the dimensions you would like to show, e.g. show_cad('xz')",
-                category=DeprecationWarning,
-            )
-            dims_to_show = (kw_dim,)
-        for dim in dims_to_show:
-            if dim not in _CAD_DIMS:
-                raise ReactorError(
-                    f"Invalid plotting dimension '{dim}'."
-                    f"Must be one of {str(_CAD_DIMS)}"
-                )
-
-        comp_copy = self._filter_copy_comps(dims_to_show, with_components)
-
+        # We filter because self.component (above) only creates
+        # a new root node for this reactor, not a new component tree.
+        comp_copy = self._filter_tree(
+            self.component(with_components), dims_to_show, filter_
+        )
         # if "xyz" is requested, construct the 3d cad
         # from each xyz component in the tree,
         # as it's assumed that the cad is only built for 1 sector
         # and is sector symmetric, therefore can be patterned
         if "xyz" in dims_to_show:
-            self._construct_xyz_cad(comp_copy, with_components, n_sectors)
+            self._construct_xyz_cad(
+                comp_copy,
+                with_components,
+                self.n_sectors if n_sectors is None else n_sectors,
+            )
 
         ComponentDisplayer().show_cad(comp_copy, **kwargs)
 
-    def plot(self, *dims: str, with_components: Optional[List[ComponentManager]] = None):
+    def plot(
+        self,
+        *dims: str,
+        with_components: Optional[List[ComponentManager]] = None,
+        filter_: Union[Callable[[Component], bool], None] = FilterMaterial(),
+    ):
         """
         Plot the reactor.
 
@@ -230,18 +484,10 @@ class Reactor:
         with_components:
             The components to construct when displaying CAD for xyz.
             Defaults to None, which means show "all" components.
+        filter_:
+            A callable to filter Components from the Component tree,
+            returning True keeps the node False removes it
         """
-        # give dims_to_show a default value
-        dims_to_show = ("xz",) if len(dims) == 0 else dims
-
-        for dim in dims_to_show:
-            if dim not in _PLOT_DIMS:
-                raise ReactorError(
-                    f"Invalid plotting dimension '{dim}'."
-                    f"Must be one of {str(_PLOT_DIMS)}"
-                )
-        for i, dim in enumerate(dims_to_show):
-            comp_copy = self._filter_copy_comps([dim], with_components)
-            ComponentPlotter(view=dim).plot_2d(
-                comp_copy, show=i == len(dims_to_show) - 1
-            )
+        self._plot_dims(
+            self.component(with_components), self._validate_plot_dims(*dims), filter_
+        )

@@ -70,7 +70,7 @@ class PFCoilBuilder(Builder):
         build_config: Dict,
         xz_cross_section: BluemiraWire,
     ):
-        super().__init__(params, build_config)
+        super().__init__(params, build_config, verbose=False)
         self.xz_cross_section = xz_cross_section
 
     def build(self) -> Component:
@@ -149,15 +149,14 @@ class PFCoilBuilder(Builder):
 
         Parameters
         ----------
-        shape: BluemiraWire
+        shape:
             The xz cross-section shape of the coil.
-        degree: float
+        degree:
             The angle [°] around which to build the components, by default 360.0.
 
         Returns
         -------
-        component: Component
-            The component grouping the results in 3D (xyz).
+        The component grouping the results in 3D (xyz).
         """
         sector_degree, n_sectors = get_n_sectors(self.params.n_TF.value, degree)
 
@@ -193,7 +192,7 @@ class PFCoilPictureFrame(Designer):
     param_cls = PFCoilPictureFrameParams
 
     def __init__(self, params: Union[PFCoilPictureFrameParams, Dict], coil: Coil):
-        super().__init__(params)
+        super().__init__(params, verbose=False)
         self.coil = coil
 
     def run(self) -> BluemiraWire:

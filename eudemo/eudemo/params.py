@@ -188,6 +188,10 @@ class EUDEMOReactorParams(ParameterFrame):
     tf_gs_g_plate: Parameter[float]
     tf_gs_base_depth: Parameter[float]
 
+    # Ports
+    tk_upper_port_wall_end: Parameter[float]
+    tk_upper_port_wall_side: Parameter[float]
+
     # Powercycle
     bb_p_inlet: Parameter[float]
     bb_p_outlet: Parameter[float]
@@ -206,3 +210,7 @@ class EUDEMOReactorParams(ParameterFrame):
     f_sol_rad_fw: Parameter[float]
     vvpfrac: Parameter[float]
     P_hcd_ss_el: Parameter[float]
+
+    # First wall panelling
+    fw_a_max: Parameter[float]
+    fw_dL_min: Parameter[float]  # noqa: N815

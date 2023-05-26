@@ -35,7 +35,6 @@ The EUDEMO reactor design routine.
 11. Produce power cycle report
 """
 
-import json
 import os
 from pathlib import Path
 from typing import Dict
@@ -43,6 +42,7 @@ from typing import Dict
 import matplotlib.pyplot as plt
 
 from bluemira.base.designer import run_designer
+from bluemira.base.logs import set_log_level
 from bluemira.base.reactor import Reactor
 from bluemira.base.reactor_config import ReactorConfig
 from bluemira.builders.cryostat import CryostatBuilder, CryostatDesigner
@@ -53,7 +53,7 @@ from bluemira.builders.thermal_shield import CryostatTSBuilder, VVTSBuilder
 from bluemira.equilibria.equilibrium import Equilibrium
 from bluemira.geometry.face import BluemiraFace
 from bluemira.geometry.tools import interpolate_bspline
-from eudemo.blanket import Blanket, BlanketBuilder
+from eudemo.blanket import Blanket, BlanketBuilder, BlanketDesigner
 from eudemo.coil_structure import build_coil_structures_component
 from eudemo.comp_managers import (
     CoilStructures,
@@ -69,6 +69,7 @@ from eudemo.equilibria import (
 )
 from eudemo.ivc import design_ivc
 from eudemo.ivc.divertor_silhouette import Divertor
+from eudemo.maintenance.lower_port import LowerPortBuilder, LowerPortDuctDesigner
 from eudemo.maintenance.upper_port import UpperPortDesigner
 from eudemo.params import EUDEMOReactorParams
 from eudemo.pf_coils import PFCoil, PFCoilsDesigner, build_pf_coils_component
@@ -78,7 +79,6 @@ from eudemo.tf_coils import TFCoil, TFCoilBuilder, TFCoilDesigner
 from eudemo.vacuum_vessel import VacuumVessel, VacuumVesselBuilder
 
 CONFIG_DIR = Path(__file__).parent.parent / "config"
-PARAMS_FILE_PATH = os.path.join(CONFIG_DIR, "params.json")
 BUILD_CONFIG_FILE_PATH = os.path.join(CONFIG_DIR, "build_config.json")
 
 
@@ -126,11 +126,40 @@ def build_divertor(params, build_config, div_silhouette) -> Divertor:
     return Divertor(builder.build())
 
 
+def build_lower_port(params, build_config, divertor_face, tf_coils_outer_boundary):
+    """Builder for the Lower Port and Duct"""
+    (
+        lp_duct_xz_void_space,
+        lp_duct_xz_koz,
+        lp_duct_angled_nowall_extrude_boundary,
+        lp_duct_straight_nowall_extrude_boundary,
+    ) = LowerPortDuctDesigner(
+        params, build_config, divertor_face, tf_coils_outer_boundary
+    ).execute()
+    builder = LowerPortBuilder(
+        params,
+        build_config,
+        lp_duct_xz_koz,
+        lp_duct_angled_nowall_extrude_boundary,
+        lp_duct_straight_nowall_extrude_boundary,
+    )
+    return builder.build(), lp_duct_xz_koz
+
+
 def build_blanket(
-    params, build_config, blanket_face, r_inner_cut: float, cut_angle: float
+    params,
+    build_config: Dict,
+    blanket_boundary,
+    blanket_face,
+    r_inner_cut: float,
+    cut_angle: float,
 ) -> Blanket:
     """Build the blanket given a silhouette of a sector."""
-    builder = BlanketBuilder(params, build_config, blanket_face, r_inner_cut, cut_angle)
+    designer = BlanketDesigner(
+        params, blanket_boundary, blanket_face, r_inner_cut, cut_angle
+    )
+    ib_silhouette, ob_silhouette = designer.execute()
+    builder = BlanketBuilder(params, build_config, ib_silhouette, ob_silhouette)
     return Blanket(builder.build())
 
 
@@ -211,28 +240,17 @@ def build_cryostat(params, build_config, cryostat_thermal_koz) -> Cryostat:
 
 def build_radiation_shield(params, build_config, cryostat_koz) -> RadiationShield:
     """
-    Design and build the Radition shield for the reactor.
+    Design and build the Radiation shield for the reactor.
     """
     return RadiationShield(
         RadiationShieldBuilder(params, build_config, BluemiraFace(cryostat_koz)).build()
     )
 
 
-def _read_json(file_path: str) -> Dict:
-    """Read a JSON file to a dictionary."""
-    with open(file_path, "r") as f:
-        return json.load(f)
-
-
 if __name__ == "__main__":
-    import time
-
+    set_log_level("INFO")
     reactor_config = ReactorConfig(
-        BUILD_CONFIG_FILE_PATH,
-        EUDEMOReactorParams,
-        global_params_path=PARAMS_FILE_PATH,
-        warn_on_empty_config=False,
-        warn_on_empty_local_params=False,
+        BUILD_CONFIG_FILE_PATH, EUDEMOReactorParams, warn_on_empty_config=False
     )
     reactor = EUDEMO(
         "EUDEMO",
@@ -269,55 +287,44 @@ if __name__ == "__main__":
         reference_eq,
     )
 
-    blanket_face, divertor_face, ivc_boundary = design_ivc(
+    ivc_shapes = design_ivc(
         reactor_config.params_for("IVC").global_params,
         reactor_config.config_for("IVC"),
         equilibrium=reference_eq,
     )
 
-    t1 = time.time()
     upper_port_designer = UpperPortDesigner(
         reactor_config.params_for("Upper Port"),
         reactor_config.config_for("Upper Port"),
-        blanket_face,
+        ivc_shapes.blanket_face,
     )
-    t2 = time.time()
-    print(f"{t2-t1}")
     upper_port_xz, r_inner_cut, cut_angle = upper_port_designer.execute()
-    t3 = time.time()
-    print(f"{t3-t2}")
+
     reactor.vacuum_vessel = build_vacuum_vessel(
         reactor_config.params_for("Vacuum vessel"),
         reactor_config.config_for("Vacuum vessel"),
-        ivc_boundary,
+        ivc_shapes.outer_boundary,
     )
-    t4 = time.time()
-    print(f"{t4-t3}")
 
     reactor.divertor = build_divertor(
         reactor_config.params_for("Divertor"),
         reactor_config.config_for("Divertor"),
-        divertor_face,
+        ivc_shapes.divertor_face,
     )
-    t5 = time.time()
-    print(f"{t5-t4}")
 
     reactor.blanket = build_blanket(
         reactor_config.params_for("Blanket"),
         reactor_config.config_for("Blanket"),
-        blanket_face,
+        ivc_shapes.inner_boundary,
+        ivc_shapes.blanket_face,
         r_inner_cut,
         cut_angle,
     )
-    t6 = time.time()
-    print(f"{t6-t5}")
     reactor.vv_thermal = build_vacuum_vessel_thermal_shield(
         reactor_config.params_for("Thermal shield"),
         reactor_config.config_for("Thermal shield", "VVTS"),
         reactor.vacuum_vessel.xz_boundary(),
     )
-    t7 = time.time()
-    print(f"{t7-t6}")
 
     reactor.tf_coils = build_tf_coils(
         reactor_config.params_for("TF coils"),
@@ -325,22 +332,29 @@ if __name__ == "__main__":
         reactor.plasma.lcfs(),
         reactor.vv_thermal.xz_boundary(),
     )
-    t8 = time.time()
-    print(f"{t8-t7}")
+
+    lower_port, lower_port_duct_xz_koz = build_lower_port(
+        reactor_config.params_for("Lower Port"),
+        reactor_config.config_for("Lower Port"),
+        ivc_shapes.divertor_face,
+        reactor.tf_coils.xz_outer_boundary(),
+    )
 
     reactor.pf_coils = build_pf_coils(
         reactor_config.params_for("PF coils"),
         reactor_config.config_for("PF coils"),
         reference_eq,
-        reactor.tf_coils.boundary(),
-        pf_coil_keep_out_zones=[],
+        reactor.tf_coils.xz_outer_boundary(),
+        pf_coil_keep_out_zones=[
+            lower_port_duct_xz_koz,
+        ],
     )
 
     reactor.cryostat_thermal = build_cryots(
         reactor_config.params_for("Thermal shield"),
         reactor_config.config_for("Thermal shield", "Cryostat"),
         reactor.pf_coils.xz_boundary(),
-        reactor.tf_coils.boundary(),
+        reactor.tf_coils.xz_outer_boundary(),
     )
 
     reactor.coil_structures = build_coil_structures(
@@ -348,7 +362,10 @@ if __name__ == "__main__":
         reactor_config.config_for("Coil structures"),
         tf_coil_xz_face=reactor.tf_coils.xz_face(),
         pf_coil_xz_wires=reactor.pf_coils.PF_xz_boundary(),
-        pf_coil_keep_out_zones=[upper_port_xz],
+        pf_coil_keep_out_zones=[
+            upper_port_xz,
+            lower_port_duct_xz_koz,
+        ],
     )
 
     reactor.cryostat = build_cryostat(
