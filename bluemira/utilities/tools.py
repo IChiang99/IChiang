@@ -22,6 +22,7 @@
 """
 A collection of miscellaneous tools.
 """
+from __future__ import annotations
 
 import operator
 import string
@@ -33,13 +34,17 @@ from itertools import permutations
 from json import JSONEncoder, dumps
 from os import listdir
 from types import ModuleType
-from typing import Any, Dict, Optional, Tuple, Type, Union
+from typing import TYPE_CHECKING, Any, Dict, Optional, Tuple, Type, Union
 
+import matplotlib.colors as colors
 import nlopt
 import numpy as np
 
 from bluemira.base.constants import E_I, E_IJ, E_IJK
 from bluemira.base.look_and_feel import bluemira_debug, bluemira_warn
+
+if TYPE_CHECKING:
+    from bluemira.display.palettes import ColorPalette
 
 # =====================================================
 # JSON utilities
@@ -300,6 +305,38 @@ cross = wrap.cross
 # =====================================================
 # Misc utilities
 # =====================================================
+
+
+class ColourDescriptor:
+    """Colour Descriptor for use with dataclasses"""
+
+    def __init__(self):
+        self._default = colors.to_hex((0.5, 0.5, 0.5))
+
+    def __set_name__(self, _, name: str):
+        """Set the attribute name from a dataclass"""
+        self._name = "_" + name
+
+    def __get__(self, obj: Any, _) -> str:
+        """Get the hex colour"""
+        if obj is None:
+            return self._default
+
+        return colors.to_hex(getattr(obj, self._name, self._default))
+
+    def __set__(self, obj: Any, value: Union[str, Tuple[float, ...], ColorPalette]):
+        """
+        Set the colour
+
+        Notes
+        -----
+        The value can be anything accepted by matplotlib.colors.to_hex
+        """
+        if hasattr(value, "as_hex"):
+            value = value.as_hex()
+            if isinstance(value, list):
+                value = value[0]
+        setattr(obj, self._name, value)
 
 
 def is_num(thing: Any) -> bool:

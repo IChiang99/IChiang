@@ -1,11 +1,8 @@
 from __future__ import annotations
 
 import functools
-from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Dict, List, Tuple, Union
-
-if TYPE_CHECKING:
-    from bluemira.geometry.base import BluemiraGeo
+from dataclasses import dataclass
+from typing import Dict, List, Tuple, Union
 
 import matplotlib.colors as colors
 import numpy as np
@@ -13,13 +10,15 @@ import polyscope as ps
 
 import bluemira.codes._freecadapi as cadapi
 from bluemira.base.look_and_feel import bluemira_warn
+from bluemira.display.palettes import ColorPalette
+from bluemira.utilities.tools import ColourDescriptor
 
 
 @dataclass
 class DefaultDisplayOptions:
     """Polyscope default display options"""
 
-    colour: Union[Tuple, str]
+    colour: ColourDescriptor = ColourDescriptor()
     transparency: float = 0.0
     material: str = "wax"
     tesselation: float = 0.05
@@ -27,33 +26,19 @@ class DefaultDisplayOptions:
     wire_radius: float = 0.001
     smooth: bool = True
 
-    _colour: Union[Tuple, str] = field(
-        init=False, repr=False, default_factory=lambda: colors.to_hex((0.5, 0.5, 0.5))
-    )
-
     @property
-    def colour(self):
-        """Colour as rbg"""
-        return colors.to_hex(self._colour)
-
-    @colour.setter
-    def colour(self, value):
-        """Set colour"""
-        self._colour = value
-
-    @property
-    def color(self):
+    def color(self) -> str:
         """See colour"""
         return self.colour
 
     @color.setter
-    def color(self, value):
+    def color(self, value: Union[str, Tuple[float, float, float], ColorPalette]):
         """See colour"""
         self.colour = value
 
 
 def show_cad(
-    parts: Union[BluemiraGeo, List[BluemiraGeo]],
+    parts: Union[cadapi.apiShape, List[cadapi.apiShape]],
     part_options: List[Dict],
     labels: List[str],
     **kwargs,
@@ -159,7 +144,7 @@ def _init_polyscope():
 
 def add_features(
     labels: List[str],
-    parts: Union[BluemiraGeo, List[BluemiraGeo]],
+    parts: Union[cadapi.apiShape, List[cadapi.apiShape]],
     options: Union[Dict, List[Dict]],
 ) -> Tuple[List[ps.SurfaceMesh], List[ps.CurveNetwork]]:
     """
@@ -184,7 +169,7 @@ def add_features(
     for shape_i, (label, part, option) in enumerate(
         zip(labels, parts, options),
     ):
-        verts, faces = cadapi.collect_verts_faces(part._shape, option["tesselation"])
+        verts, faces = cadapi.collect_verts_faces(part, option["tesselation"])
 
         if not (verts is None or faces is None):
             m = ps.register_surface_mesh(
@@ -199,7 +184,7 @@ def add_features(
             meshes.append(m)
 
         if option["wires_on"] or (verts is None or faces is None):
-            verts, edges = cadapi.collect_wires(part._shape, Deflection=0.01)
+            verts, edges = cadapi.collect_wires(part, Deflection=0.01)
             c = ps.register_curve_network(
                 clean_name(label, f"{shape_i}_wire"),
                 verts,

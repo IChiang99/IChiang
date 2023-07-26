@@ -19,22 +19,38 @@
 # You should have received a copy of the GNU Lesser General Public
 # License along with bluemira; if not, see <https://www.gnu.org/licenses/>.
 """Base class for a Bluemira reactor."""
+from __future__ import annotations
 
 import abc
 import time
-from typing import Any, Callable, List, Optional, Tuple, Type, Union
+from pathlib import Path
+from typing import (
+    TYPE_CHECKING,
+    Any,
+    Callable,
+    Iterable,
+    List,
+    Optional,
+    Tuple,
+    Type,
+    Union,
+)
 from warnings import warn
 
 import anytree
 from rich.progress import track
 
-from bluemira.base.components import Component
+from bluemira.base.components import Component, get_properties_from_components
 from bluemira.base.error import ComponentError
 from bluemira.base.look_and_feel import bluemira_print
 from bluemira.builders.tools import circular_pattern_component
 from bluemira.display.displayer import ComponentDisplayer
 from bluemira.display.plotter import ComponentPlotter
+from bluemira.geometry.tools import save_cad
 from bluemira.materials.material import SerialisedMaterial, Void
+
+if TYPE_CHECKING:
+    import bluemira.codes._freecadapi as cadapi
 
 _PLOT_DIMS = ["xy", "xz"]
 _CAD_DIMS = ["xy", "xz", "xyz"]
@@ -58,10 +74,42 @@ class BaseManager(abc.ABC):
         """
 
     @abc.abstractmethod
+    def save_cad(
+        self,
+        components: Union[Component, Iterable[Component]],
+        filename: str,
+        cad_format: Union[str, cadapi.CADFileType] = "stp",
+        **kwargs,
+    ):
+        """
+        Save the CAD build of the component.
+
+        Parameters
+        ----------
+        components:
+            components to save
+        filename:
+            the filename to save
+        cad_format:
+            CAD file format
+        """
+        if kw_formatt := kwargs.pop("formatt", None):
+            warn(
+                "Using kwarg 'formatt' is no longer supported. "
+                "Use cad_format instead.",
+                category=DeprecationWarning,
+            )
+            cad_format = kw_formatt
+
+        shapes, names = get_properties_from_components(components, ("shape", "name"))
+
+        save_cad(shapes, filename, cad_format, names, **kwargs)
+
+    @abc.abstractmethod
     def show_cad(
         self,
         *dims: str,
-        filter_: Union[Callable[[Component], bool], None],
+        component_filter: Optional[Callable[[Component], bool]],
         **kwargs,
     ):
         """
@@ -72,13 +120,13 @@ class BaseManager(abc.ABC):
         *dims:
             The dimension of the reactor to show, typically one of
             'xz', 'xy', or 'xyz'. (default: 'xyz')
-        filter_:
+        component_filter:
             A callable to filter Components from the Component tree,
             returning True keeps the node False removes it
         """
 
     @abc.abstractmethod
-    def plot(self, *dims: str, filter_: Union[Callable[[Component], bool], None]):
+    def plot(self, *dims: str, component_filter: Optional[Callable[[Component], bool]]):
         """
         Plot the component.
 
@@ -87,7 +135,7 @@ class BaseManager(abc.ABC):
         *dims:
             The dimension(s) of the reactor to show, 'xz' and/or 'xy'.
             (default: 'xz')
-        filter_:
+        component_filter:
             A callable to filter Components from the Component tree,
             returning True keeps the node False removes it
         """
@@ -142,7 +190,7 @@ class BaseManager(abc.ABC):
         self,
         comp: Component,
         dims_to_show: Tuple[str, ...],
-        filter_: Union[Callable[[Component], bool], None],
+        component_filter: Optional[Callable[[Component], bool]],
     ) -> Component:
         """
         Filter a component tree
@@ -153,18 +201,18 @@ class BaseManager(abc.ABC):
         as filtering would mutate the ComponentMangers' underlying component trees
         """
         comp_copy = comp.copy()
-        comp_copy.filter_components(dims_to_show, filter_)
+        comp_copy.filter_components(dims_to_show, component_filter)
         return comp_copy
 
     def _plot_dims(
         self,
         comp: Component,
         dims_to_show: Tuple[str, ...],
-        filter_: Union[Callable[[Component], bool], None],
+        component_filter: Optional[Callable[[Component], bool]],
     ):
         for i, dim in enumerate(dims_to_show):
             ComponentPlotter(view=dim).plot_2d(
-                self._filter_tree(comp, dims_to_show, filter_),
+                self._filter_tree(comp, dims_to_show, component_filter),
                 show=i == len(dims_to_show) - 1,
             )
 
@@ -258,10 +306,60 @@ class ComponentManager(BaseManager):
         """
         return self._component
 
+    def save_cad(
+        self,
+        *dims: str,
+        component_filter: Optional[Callable[[Component], bool]] = FilterMaterial(),
+        filename: Optional[str] = None,
+        cad_format: Union[str, cadapi.CADFileType] = "stp",
+        directory: Union[str, Path] = "",
+        **kwargs,
+    ):
+        """
+        Save the CAD build of the component.
+
+        Parameters
+        ----------
+        *dims:
+            The dimension of the reactor to show, typically one of
+            'xz', 'xy', or 'xyz'. (default: 'xyz')
+        component_filter:
+            A callable to filter Components from the Component tree,
+            returning True keeps the node False removes it
+        filename:
+            the filename to save, will default to the component name
+        cad_format:
+            CAD file format
+        directory:
+            Directory to save into, defaults to the current directory
+        kwargs:
+            passed to the :func:`bluemira.geometry.tools.save_cad` function
+        """
+        if kw_filter_ := kwargs.pop("filter_", None):
+            warn(
+                "Using kwarg 'filter_' is no longer supported. "
+                "Use component_filter instead.",
+                category=DeprecationWarning,
+            )
+            component_filter = kw_filter_
+
+        comp = self.component()
+        if filename is None:
+            filename = comp.name
+
+        super().save_cad(
+            self._filter_tree(
+                comp, self._validate_cad_dims(*dims, **kwargs), component_filter
+            ),
+            filename=Path(directory, filename).as_posix(),
+            cad_format=cad_format,
+            **kwargs,
+        )
+
     def show_cad(
         self,
         *dims: str,
-        filter_: Union[Callable[[Component], bool], None] = FilterMaterial(),
+        component_filter: Optional[Callable[[Component], bool]] = FilterMaterial(),
         **kwargs,
     ):
         """
@@ -272,13 +370,25 @@ class ComponentManager(BaseManager):
         *dims:
             The dimension of the reactor to show, typically one of
             'xz', 'xy', or 'xyz'. (default: 'xyz')
-        filter_:
+        component_filter:
             A callable to filter Components from the Component tree,
             returning True keeps the node False removes it
+        kwargs:
+            passed to the `~bluemira.display.displayer.show_cad` function
         """
+        if kw_filter_ := kwargs.pop("filter_", None):
+            warn(
+                "Using kwarg 'filter_' is no longer supported. "
+                "Use component_filter instead.",
+                category=DeprecationWarning,
+            )
+            component_filter = kw_filter_
+
         ComponentDisplayer().show_cad(
             self._filter_tree(
-                self.component(), self._validate_cad_dims(*dims, **kwargs), filter_
+                self.component(),
+                self._validate_cad_dims(*dims, **kwargs),
+                component_filter,
             ),
             **kwargs,
         )
@@ -286,7 +396,8 @@ class ComponentManager(BaseManager):
     def plot(
         self,
         *dims: str,
-        filter_: Union[Callable[[Component], bool], None] = FilterMaterial(),
+        component_filter: Optional[Callable[[Component], bool]] = FilterMaterial(),
+        **kwargs,
     ):
         """
         Plot the component.
@@ -296,11 +407,21 @@ class ComponentManager(BaseManager):
         *dims:
             The dimension(s) of the reactor to show, 'xz' and/or 'xy'.
             (default: 'xz')
-        filter_:
+        component_filter:
             A callable to filter Components from the Component tree,
             returning True keeps the node False removes it
         """
-        self._plot_dims(self.component(), self._validate_plot_dims(*dims), filter_)
+        if kw_filter_ := kwargs.pop("filter_", None):
+            warn(
+                "Using kwarg 'filter_' is no longer supported. "
+                "Use component_filter instead.",
+                category=DeprecationWarning,
+            )
+            component_filter = kw_filter_
+
+        self._plot_dims(
+            self.component(), self._validate_plot_dims(*dims), component_filter
+        )
 
 
 class Reactor(BaseManager):
@@ -421,12 +542,97 @@ class Reactor(BaseManager):
                 degree=(360 / self.n_sectors) * n_sectors,
             )
 
+    def _filter_and_reconstruct(
+        self,
+        dims_to_show: Tuple[str, ...],
+        with_components: Optional[List[ComponentManager]],
+        n_sectors: Optional[int],
+        component_filter: Optional[Callable[[Component], bool]],
+        **kwargs,
+    ) -> Component:
+        # We filter because self.component (above) only creates
+        # a new root node for this reactor, not a new component tree.
+        comp_copy = self._filter_tree(
+            self.component(with_components), dims_to_show, component_filter
+        )
+        # if "xyz" is requested, construct the 3d cad
+        # from each xyz component in the tree,
+        # as it's assumed that the cad is only built for 1 sector
+        # and is sector symmetric, therefore can be patterned
+        if "xyz" in dims_to_show:
+            self._construct_xyz_cad(
+                comp_copy,
+                with_components,
+                self.n_sectors if n_sectors is None else n_sectors,
+            )
+        return comp_copy
+
+    def save_cad(
+        self,
+        *dims: str,
+        with_components: Optional[List[ComponentManager]] = None,
+        n_sectors: Optional[int] = None,
+        component_filter: Optional[Callable[[Component], bool]] = FilterMaterial(),
+        filename: Optional[str] = None,
+        cad_format: Union[str, cadapi.CADFileType] = "stp",
+        directory: Union[str, Path] = "",
+        **kwargs,
+    ):
+        """
+        Save the CAD build of the reactor.
+
+        Parameters
+        ----------
+        *dims:
+            The dimension of the reactor to show, typically one of
+            'xz', 'xy', or 'xyz'. (default: 'xyz')
+        with_components:
+            The components to construct when displaying CAD for xyz.
+            Defaults to None, which means show "all" components.
+        n_sectors:
+            The number of sectors to construct when displaying CAD for xyz
+            Defaults to None, which means show "all" sectors.
+        component_filter:
+            A callable to filter Components from the Component tree,
+            returning True keeps the node False removes it
+        filename:
+            the filename to save, will default to the component name
+        cad_format:
+            CAD file format
+        directory:
+            Directory to save into, defaults to the current directory
+        kwargs:
+            passed to the :func:`bluemira.geometry.tools.save_cad` function
+        """
+        if kw_filter_ := kwargs.pop("filter_", None):
+            warn(
+                "Using kwarg 'filter_' is no longer supported. "
+                "Use component_filter instead.",
+                category=DeprecationWarning,
+            )
+            component_filter = kw_filter_
+
+        if filename is None:
+            filename = self.name
+
+        super().save_cad(
+            self._filter_and_reconstruct(
+                self._validate_cad_dims(*dims),
+                with_components,
+                n_sectors,
+                component_filter,
+            ),
+            Path(directory, filename).as_posix(),
+            cad_format,
+            **kwargs,
+        )
+
     def show_cad(
         self,
         *dims: str,
         with_components: Optional[List[ComponentManager]] = None,
         n_sectors: Optional[int] = None,
-        filter_: Union[Callable[[Component], bool], None] = FilterMaterial(),
+        component_filter: Optional[Callable[[Component], bool]] = FilterMaterial(),
         **kwargs,
     ):
         """
@@ -443,35 +649,36 @@ class Reactor(BaseManager):
         n_sectors:
             The number of sectors to construct when displaying CAD for xyz
             Defaults to None, which means show "all" sectors.
-        filter_:
+        component_filter:
             A callable to filter Components from the Component tree,
             returning True keeps the node False removes it
+        kwargs:
+            passed to the `~bluemira.display.displayer.show_cad` function
         """
-        dims_to_show = self._validate_cad_dims(*dims, **kwargs)
-
-        # We filter because self.component (above) only creates
-        # a new root node for this reactor, not a new component tree.
-        comp_copy = self._filter_tree(
-            self.component(with_components), dims_to_show, filter_
-        )
-        # if "xyz" is requested, construct the 3d cad
-        # from each xyz component in the tree,
-        # as it's assumed that the cad is only built for 1 sector
-        # and is sector symmetric, therefore can be patterned
-        if "xyz" in dims_to_show:
-            self._construct_xyz_cad(
-                comp_copy,
-                with_components,
-                self.n_sectors if n_sectors is None else n_sectors,
+        if kw_filter_ := kwargs.pop("filter_", None):
+            warn(
+                "Using kwarg 'filter_' is no longer supported. "
+                "Use component_filter instead.",
+                category=DeprecationWarning,
             )
+            component_filter = kw_filter_
 
-        ComponentDisplayer().show_cad(comp_copy, **kwargs)
+        ComponentDisplayer().show_cad(
+            self._filter_and_reconstruct(
+                self._validate_cad_dims(*dims, **kwargs),
+                with_components,
+                n_sectors,
+                component_filter,
+            ),
+            **kwargs,
+        )
 
     def plot(
         self,
         *dims: str,
         with_components: Optional[List[ComponentManager]] = None,
-        filter_: Union[Callable[[Component], bool], None] = FilterMaterial(),
+        component_filter: Optional[Callable[[Component], bool]] = FilterMaterial(),
+        **kwargs,
     ):
         """
         Plot the reactor.
@@ -484,10 +691,20 @@ class Reactor(BaseManager):
         with_components:
             The components to construct when displaying CAD for xyz.
             Defaults to None, which means show "all" components.
-        filter_:
+        component_filter:
             A callable to filter Components from the Component tree,
             returning True keeps the node False removes it
         """
+        if kw_filter_ := kwargs.pop("filter_", None):
+            warn(
+                "Using kwarg 'filter_' is no longer supported. "
+                "Use component_filter instead.",
+                category=DeprecationWarning,
+            )
+            component_filter = kw_filter_
+
         self._plot_dims(
-            self.component(with_components), self._validate_plot_dims(*dims), filter_
+            self.component(with_components),
+            self._validate_plot_dims(*dims),
+            component_filter,
         )

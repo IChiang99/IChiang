@@ -30,13 +30,20 @@ import math
 import os
 import sys
 from copy import deepcopy
-from dataclasses import dataclass, field
+from dataclasses import dataclass
+from functools import wraps
 from types import DynamicClassAttribute
-from typing import TYPE_CHECKING, Dict, Iterable, List, Optional, Tuple, Union
-
-if TYPE_CHECKING:
-    from bluemira.geometry.base import BluemiraGeo
-
+from typing import (
+    TYPE_CHECKING,
+    Callable,
+    Dict,
+    Iterable,
+    List,
+    Optional,
+    Protocol,
+    Tuple,
+    Union,
+)
 from warnings import warn
 
 import FreeCAD
@@ -63,6 +70,10 @@ from bluemira.base.look_and_feel import bluemira_warn
 from bluemira.codes._freecadconfig import _freecad_save_config
 from bluemira.codes.error import FreeCADError, InvalidCADInputsError
 from bluemira.geometry.constants import MINIMUM_LENGTH
+from bluemira.utilities.tools import ColourDescriptor
+
+if TYPE_CHECKING:
+    from bluemira.display.palettes import ColorPalette
 
 apiVertex = Part.Vertex  # noqa :N816
 apiVector = Base.Vector  # noqa :N816
@@ -361,10 +372,10 @@ def interpolate_bspline(
         raise InvalidCADInputsError(_err + "\n")
     if np.allclose(pntslist[0], pntslist[-1], rtol=0, atol=EPS):
         if len(pntslist) > 2:
+            if not closed:
+                bluemira_warn("interpolate_bspline: equal endpoints forced Closed")
             closed = True
             pntslist.pop()
-            _err = "interpolate_bspline: equal endpoints forced Closed"
-            bluemira_warn(_err)
         else:
             # len == 2 and first == last
             _err = "interpolate_bspline: Invalid pointslist (len == 2 and first == last)"
@@ -1193,17 +1204,17 @@ class CADFileType(enum.Enum):
     """
 
     # Commented out currently don't function
-    ACSII_STEREO_MESH = ("ast", "Mesh")
+    ASCII_STEREO_MESH = ("ast", "Mesh")
     ADDITIVE_MANUFACTURING = ("amf", "Mesh")
-    # ASC = ("asc", "Points")
-    # AUTOCAD = ("dwg", "importDWG")
+    ASC = ("asc", "Points")
+    AUTOCAD = ("dwg", "importDWG")
     AUTOCAD_DXF = ("dxf", "importDXF")
     # BDF = ("bdf", "feminout.exportNastranMesh")
     BINMESH = ("bms", "Mesh")
     BREP = ("brep", "Part")
     BREP_2 = ("brp", "Part")
     CSG = ("csg", "exportCSG")
-    # DAE = ("dae", "importDAE")
+    DAE = ("dae", "importDAE")
     # DAT = ("dat", "Fem")
     FREECAD = ("FCStd", None)
     # FENICS_FEM = ("xdmf", "feminout.importFenicsMesh")
@@ -1217,39 +1228,39 @@ class CADFileType(enum.Enum):
     # INP = ("inp", "Fem")
     INVENTOR_V2_1 = ("iv", "Mesh")
     JSON = ("json", "importJSON")
-    JSON_MESH = ("json", "feminout.importYamlJsonMesh")
+    # JSON_MESH = ("$json", "feminout.importYamlJsonMesh")
     # MED = ("med", "Fem")
     # MESHJSON = ("meshjson", "feminout.importYamlJsonMesh")
     # MESHPY = ("meshpy", "feminout.importPyMesh")
     # MESHYAML = ("meshyaml", "feminout.importYamlJsonMesh")
     OBJ = ("obj", "Mesh")
-    OBJ_WAVE = ("obj", "importOBJ")
+    OBJ_WAVE = ("$obj", "importOBJ")
     OFF = ("off", "Mesh")
     OPENSCAD = ("scad", "exportCSG")
     # PCD = ("pcd", "Points")
-    PDF = ("pdf", "FreeCADGui")
+    # PDF = ("pdf", "FreeCADGui")
     # PLY = ("ply", "Points")
     PLY_STANFORD = ("ply", "Mesh")
     SIMPLE_MODEL = ("smf", "Mesh")
     STEP = ("stp", "ImportGui")
     STEP_2 = ("step", "ImportGui")
-    # STEP_ZIP = ("stpz", "stepZ")
+    STEP_ZIP = ("stpZ", "stepZ")
     STL = ("stl", "Mesh")
     # SVG = ("svg", "DrawingGui")
-    # SVG_FLAT = ("svg", "importSVG")
+    # SVG_FLAT = ("$svg", "importSVG")
     # TETGEN_FEM = ("poly", "feminout.convert2TetGen")
     THREED_MANUFACTURING = ("3mf", "Mesh")
     # UNV = ("unv", "Fem")
-    VRML = ("vrml", "FreeCADGui")
-    VRML_2 = ("wrl", "FreeCADGui")
-    VRML_ZIP = ("wrl.gz", "FreeCADGui")
-    VRML_ZIP_2 = ("wrz", "FreeCADGui")
+    # VRML = ("vrml", "FreeCADGui")
+    # VRML_2 = ("wrl", "FreeCADGui")
+    # VRML_ZIP = ("wrl.gz", "FreeCADGui")
+    # VRML_ZIP_2 = ("wrz", "FreeCADGui")
     # VTK = ("vtk", "Fem")
     # VTU = ("vtu", "Fem")
     # WEBGL = ("html", "importWebGL")
-    WEBGL_X3D = ("xhtml", "FreeCADGui")
-    X3D = ("x3d", "FreeCADGui")
-    X3DZ = ("x3dz", "FreeCADGui")
+    # WEBGL_X3D = ("xhtml", "FreeCADGui")
+    # X3D = ("x3d", "FreeCADGui")
+    # X3DZ = ("x3dz", "FreeCADGui")
     # YAML = ("yaml", "feminout.importYamlJsonMesh")
     # Z88_FEM_MESH = ("z88", "Fem")
     # Z88_FEM_MESH_2 = ("i1.txt", "feminout.importZ88Mesh")
@@ -1263,11 +1274,29 @@ class CADFileType(enum.Enum):
     def __init__(self, _, module):
         self.module = module
 
+    @classmethod
+    def unitless_formats(cls) -> Tuple[CADFileType, ...]:
+        """CAD formats that don't need to be converted because they are unitless"""
+        return (cls.OBJ_WAVE, *[form for form in cls if form.module == "Mesh"])
+
+    @classmethod
+    def manual_mesh_formats(cls) -> Tuple[CADFileType, ...]:
+        """CAD formats that need to have meshed objects."""
+        return (
+            cls.GLTRANSMISSION,
+            cls.GLTRANSMISSION_2,
+            cls.PLY_STANFORD,
+            cls.SIMPLE_MODEL,
+        )
+
     @DynamicClassAttribute
-    def exporter(self):
+    def exporter(self) -> ExporterProtocol:
         """Get exporter module for each filetype"""
         try:
-            return __import__(self.module).export
+            export_func = __import__(self.module).export
+            if self in self.manual_mesh_formats():
+                return meshed_exporter(self, export_func)
+            return export_func
         except AttributeError:
             modlist = self.module.split(".")
             if len(modlist) > 1:
@@ -1278,11 +1307,40 @@ class CADFileType(enum.Enum):
                 )
         except TypeError:
             # Assume CADFileType.FREECAD
-            def FreeCADwriter(objs, filename):
+            def FreeCADwriter(objs, filename, **kwargs):
                 doc = objs[0].Document
                 doc.saveAs(filename)
 
             return FreeCADwriter
+
+
+class ExporterProtocol(Protocol):
+    """Typing for CAD exporter"""
+
+    def __call__(self, objs: List[Part.Feature], filename: str, **kwargs):
+        """Export CAD protocol"""
+
+
+def meshed_exporter(
+    cad_format: CADFileType, export_func: Callable[[Part.Feature, str], None]
+) -> ExporterProtocol:
+    """Meshing and then exporting CAD in certain formats."""
+
+    @wraps(export_func)
+    def wrapper(objs: Part.Feature, filename: str, **kwargs):
+        """
+        Tessellation should happen on a copied object
+        """
+        tessellate = kwargs.pop("tessellate", 0.5)
+        if cad_format in CADFileType.unitless_formats():
+            for no, obj in enumerate(objs):
+                objs[no].Shape = obj.Shape.copy()
+        for ob in objs:
+            ob.Shape.tessellate(tessellate)
+
+        export_func(objs, filename, **kwargs)
+
+    return wrapper
 
 
 def save_as_STP(
@@ -1354,7 +1412,7 @@ def _scale_obj(objs, scale: float = 1000):
 def save_cad(
     shapes: Iterable[apiShape],
     filename: str,
-    formatt: Union[str, CADFileType] = "stp",
+    cad_format: Union[str, CADFileType] = "stp",
     labels: Optional[Iterable[str]] = None,
     unit_scale: str = "metre",
     **kwargs,
@@ -1367,9 +1425,9 @@ def save_cad(
     shapes:
         CAD shape objects to save
     filename:
-        filename (file extension will be forced base on `formatt`)
-    formatt:
-        file formatt
+        filename (file extension will be forced base on `cad_format`)
+    cad_format:
+        file cad_format
     labels:
         shape labels
     unit_scale:
@@ -1382,29 +1440,61 @@ def save_cad(
     Part builds in millimetres therefore we need to scale to metres to be
     consistent with our units
     """
-    formatt = CADFileType(formatt)
-    filename = force_file_extension(filename, f".{formatt.value}")
+    if kw_formatt := kwargs.pop("formatt", None):
+        warn(
+            "Using kwarg 'formatt' is no longer supported. Use cad_format instead.",
+            category=DeprecationWarning,
+        )
+        cad_format = kw_formatt
 
-    _freecad_save_config(**kwargs)
+    try:
+        cad_format = CADFileType(cad_format)
+    except ValueError as ve:
+        try:
+            cad_format = CADFileType[cad_format.upper()]
+        except (KeyError, AttributeError):
+            raise ve
+
+    filename = force_file_extension(filename, f".{cad_format.value.strip('$')}")
+
+    _freecad_save_config(
+        **{
+            k: kwargs.pop(k)
+            for k in kwargs.keys() & {"unit", "no_dp", "author", "stp_file_scheme"}
+        }
+    )
 
     objs = list(_setup_document(shapes, labels))
 
-    # Part is always built in mm
-    _scale_obj(objs, scale=raw_uc(1, unit_scale, "mm"))
+    # Part is always built in mm but some formats are unitless
+    if cad_format not in CADFileType.unitless_formats():
+        _scale_obj(objs, scale=raw_uc(1, unit_scale, "mm"))
 
     # Some exporters need FreeCADGui to be setup before their import,
     # this is achieved in _setup_document
     try:
-        formatt.exporter(objs, filename)
+        cad_format.exporter(objs, filename, **kwargs)
     except ImportError as imp_err:
         raise FreeCADError(
-            f"Unable to save to {formatt.value} please try through the main FreeCAD GUI"
+            f"Unable to save to {cad_format.value} please try through the main FreeCAD GUI"
         ) from imp_err
 
     if not os.path.exists(filename):
-        raise FileNotFoundError(
-            f"{filename} not created, filetype not written by FreeCAD."
-            f"Possibly no object compatible with '{formatt.value}'"
+        mesg = f"{filename} not created, filetype not written by FreeCAD."
+        if cad_format is CADFileType.IFC_BIM:
+            mesg += " FreeCAD requires `ifcopenshell` to save in this format."
+        elif cad_format is CADFileType.DAE:
+            mesg += " FreeCAD requires `pycollada` to save in this format."
+        elif cad_format is CADFileType.IFC_BIM_JSON:
+            mesg += (
+                " FreeCAD requires `ifcopenshell` and"
+                " IFCJSON module to save in this format."
+            )
+        elif cad_format is CADFileType.AUTOCAD:
+            mesg += " FreeCAD requires `LibreDWG` to save in this format."
+
+        raise FreeCADError(
+            f"{mesg} Not able to save object with format: '{cad_format.value.strip('$')}'"
         )
 
 
@@ -2281,22 +2371,8 @@ def collect_wires(solid: apiShape, **kwds) -> Tuple[np.ndarray, np.ndarray]:
 class DefaultDisplayOptions:
     """Freecad default display options"""
 
-    colour: Union[Tuple, str]
+    colour: ColourDescriptor = ColourDescriptor()
     transparency: float = 0.0
-
-    _colour: Union[Tuple, str] = field(
-        init=False, repr=False, default_factory=lambda: colors.to_hex((0.5, 0.5, 0.5))
-    )
-
-    @property
-    def colour(self) -> str:
-        """Colour as rbg"""
-        return colors.to_hex(self._colour)
-
-    @colour.setter
-    def colour(self, value):
-        """Set colour"""
-        self._colour = value
 
     @property
     def color(self) -> str:
@@ -2304,13 +2380,13 @@ class DefaultDisplayOptions:
         return self.colour
 
     @color.setter
-    def color(self, value):
+    def color(self, value: Union[str, Tuple[float, float, float], ColorPalette]):
         """See colour"""
         self.colour = value
 
 
 def show_cad(
-    parts: Union[BluemiraGeo, List[BluemiraGeo]],
+    parts: Union[apiShape, List[apiShape]],
     options: Union[Dict, List[Optional[Dict]]],
     labels: List[str],
     **kwargs,

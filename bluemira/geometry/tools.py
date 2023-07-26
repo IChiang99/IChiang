@@ -29,6 +29,7 @@ import inspect
 import json
 import os
 from copy import deepcopy
+from logging import warn
 from typing import (
     Any,
     Callable,
@@ -47,7 +48,6 @@ import numpy as np
 from scipy.spatial import ConvexHull
 
 import bluemira.mesh.meshing as meshing
-from bluemira.base.components import Component, get_properties_from_components
 from bluemira.base.constants import EPS
 from bluemira.base.file import force_file_extension, get_bluemira_path
 from bluemira.base.look_and_feel import bluemira_debug, bluemira_warn
@@ -390,6 +390,66 @@ def interpolate_bspline(
         cadapi.interpolate_bspline(points.T, closed, start_tangent, end_tangent),
         label=label,
     )
+
+
+def force_wire_to_spline(
+    wire: BluemiraWire,
+    n_edges_max: int = 200,
+    l2_tolerance: float = 5e-3,
+) -> BluemiraWire:
+    """
+    Force a wire to be a spline wire.
+
+    Parameters
+    ----------
+    wire:
+        The BluemiraWire to be turned into a splined wire
+    n_edges_max:
+        The maximum number of edges in the wire, below which this operation
+        does nothing
+    l2_tolerance:
+        The L2-norm difference w.r.t. the original wire, above which this
+        operation will warn that the desired tolerance was not achieved.
+
+    Returns
+    -------
+    A new spline version of the wire
+
+    Notes
+    -----
+    This is intended for use with wires that consist of large polygons, often resulting
+    from operations that failed with primitives and fallback methods making use of
+    of polygons. This can be relatively stubborn to transform back to splines.
+    """
+    original_n_edges = len(wire.edges)
+    if original_n_edges < n_edges_max:
+        bluemira_debug(
+            f"Wire already has {original_n_edges} < {n_edges_max=}. No point forcing to a spline."
+        )
+        return wire
+
+    original_points = wire.discretize(ndiscr=2 * original_n_edges, byedges=False)
+
+    for n_discr in np.array(original_n_edges * np.linspace(0.8, 0.1, 8), dtype=int):
+        points = wire.discretize(ndiscr=int(n_discr), byedges=False)
+        try:
+            wire = BluemiraWire(
+                cadapi.interpolate_bspline(points.T, closed=wire.is_closed()),
+                label=wire.label,
+            )
+            break
+        except cadapi.FreeCADError:
+            continue
+
+    new_points = wire.discretize(ndiscr=2 * original_n_edges, byedges=False)
+
+    delta = np.linalg.norm(original_points.xyz - new_points.xyz, ord=2)
+    if delta > l2_tolerance:
+        bluemira_warn(
+            f"Forcing wire to spline with {n_discr} interpolation points did not achieve the desired tolerance: {delta} > {l2_tolerance}"
+        )
+
+    return wire
 
 
 def make_circle(
@@ -1047,9 +1107,10 @@ def save_as_STP(
 
 
 def save_cad(
-    components: Union[Component, Iterable[Component]],
+    shapes: Union[BluemiraGeo, List[BluemiraGeo]],
     filename: str,
-    formatt: Union[str, cadapi.CADFileType] = "stp",
+    cad_format: Union[str, cadapi.CADFileType] = "stp",
+    names: Optional[Union[str, List[str]]] = None,
     **kwargs,
 ):
     """
@@ -1057,22 +1118,35 @@ def save_cad(
 
     Parameters
     ----------
-    components:
-        components to save
+    shapes:
+        shapes to save
     filename:
         Full path filename of the STP assembly
-    formatt:
+    cad_format:
         file format to save as
+    names:
+        Names of shapes to save
     kwargs:
         arguments passed to cadapi save function
     """
-    shape_name = get_properties_from_components(components, ("shape", "name"))
-    if isinstance(shape_name[0], BluemiraGeo):
-        shapes, names = [shape_name[0]], [shape_name[1]]
-    else:
-        shapes, names = zip(*shape_name)
+    if kw_formatt := kwargs.pop("formatt", None):
+        warn(
+            "Using kwarg 'formatt' is no longer supported. Use cad_format instead.",
+            category=DeprecationWarning,
+        )
+        cad_format = kw_formatt
+
+    if not isinstance(shapes, list):
+        shapes = [shapes]
+    if names is not None and not isinstance(names, list):
+        names = [names]
+
     cadapi.save_cad(
-        [s.shape for s in shapes], filename, formatt=formatt, labels=names, **kwargs
+        [s.shape for s in shapes],
+        filename,
+        cad_format=cad_format,
+        labels=names,
+        **kwargs,
     )
 
 
@@ -1109,7 +1183,7 @@ def _signed_distance_2D(point: np.ndarray, polygon: np.ndarray) -> float:
     point:
         2-D point
     polygon:
-        2-D set of point coordinates
+        2-D set of points (closed)
 
     Returns
     -------
@@ -1154,19 +1228,27 @@ def signed_distance_2D_polygon(
 ) -> np.ndarray:
     """
     2-D vector-valued signed distance function from a subject polygon to a target
-    polygon. The return values are negative for points outside the subject polygon, and
-    positive for points inside the subject polygon.
+    polygon. The return values are negative for points outside the target polygon, and
+    positive for points inside the target polygon.
 
     Parameters
     ----------
-    subject_poly
+    subject_poly:
         Subject 2-D polygon
     target_poly:
-        Target 2-D polygon
+        Target 2-D polygon (closed polygons only)
 
     Returns
     -------
     Signed distances from the vertices of the subject polygon to the target polygon
+
+    Notes
+    -----
+    This can used as a keep-out-zone constraint, in which the target polygon would
+    be the keep-out-zone, and the subject polygon would be the shape which must
+    be outsize of the keep-out-zone.
+
+    The target polygon must be closed.
     """
     m = len(subject_poly)
     d = np.zeros(m)

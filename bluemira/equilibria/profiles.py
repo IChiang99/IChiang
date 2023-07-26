@@ -85,7 +85,7 @@ def fitfunc(
     return popt
 
 
-@nb.jit
+@nb.jit(nopython=True)
 def singlepowerfunc(x: float, *args) -> float:
     """
     Single power shape function defined e.g. CREATE stuff
@@ -96,7 +96,7 @@ def singlepowerfunc(x: float, *args) -> float:
     return 1 - x**n
 
 
-@nb.jit(cache=True)
+@nb.jit(nopython=True, cache=True)
 def doublepowerfunc(x: float, *args) -> float:
     """
     Double power shape function defined e.g. in Lao 1985
@@ -122,7 +122,7 @@ def pshape(
     return si
 
 
-@nb.jit(cache=False, forceobj=True)  # Cannot cache due to "lifted loops"
+@nb.jit(forceobj=True, looplift=True)  # Cannot cache due to "lifted loops"
 def speedy_pressure(
     psi_norm: np.ndarray, psio: float, psix: float, shape: Callable[[float], float]
 ) -> np.ndarray:
@@ -208,7 +208,7 @@ def laopoly(x: float, *args) -> float:
     return res
 
 
-@nb.jit(cache=True)
+@nb.jit(nopython=True, cache=True)
 def luxonexp(x: float, *args) -> float:
     """
     Exponential shape function defined in Luxon 1984
@@ -779,8 +779,9 @@ class CustomProfile(Profile):
         if self.I_p is not None:
             # This is a simple way to prescribe the plasma current
             I_p = self.int2d(jtor)
-            self.scale = self.I_p / I_p
-            jtor *= self.scale
+            if I_p != 0.0:
+                self.scale = self.I_p / I_p
+                jtor *= self.scale
         return jtor
 
     def pressure(self, psinorm: Union[float, np.ndarray]) -> Union[float, np.ndarray]:
