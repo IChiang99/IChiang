@@ -142,7 +142,7 @@ class UpperPortOP(OptimisationProblem):
         co = self.get_outer_cut_point(ci, gamma)[0]
         c1 = (self.r_ob_max - co + self.c_rm) - (ro - co)
         c2 = (ci - self.r_ib_min) - (ro - ci + self.c_rm)
-        c3 = (ri + 0.5 * abs(ci - self.r_ib_min)) - ci
+        c3 = (ri + 0.35 * abs(ci - self.r_ib_min)) - ci      # change factor to 0.2
         return np.array([c1, c2, c3])
 
     def get_outer_cut_point(self, ci: float, gamma: float):
@@ -195,7 +195,7 @@ class UpperPortKOZDesignerParams(ParameterFrame):
     """Blanket outboard thickness [m]."""
 
 
-class UpperPortKOZDesigner(Designer[Tuple[BluemiraFace, float, float]]):
+class UpperPortKOZDesigner(Designer[Tuple[BluemiraFace, float, float]]): # append BluemiraFace to start for add. koz
     """Upper Port keep-out zone designer."""
 
     param_cls = UpperPortKOZDesignerParams
@@ -206,7 +206,7 @@ class UpperPortKOZDesigner(Designer[Tuple[BluemiraFace, float, float]]):
         params: Union[Dict, ParameterFrame],
         build_config: Dict,
         blanket_face: BluemiraFace,
-        upper_port_extrema=10,
+        upper_port_extrema=10.0,
     ):
         super().__init__(params, build_config)
         self.blanket_face = blanket_face
@@ -246,7 +246,15 @@ class UpperPortKOZDesigner(Designer[Tuple[BluemiraFace, float, float]]):
         r_up_inner -= offset
         r_up_outer += offset
 
+        # r_up_inner -= 0.450
+        # r_up_outer -= 0.825
+        r_up_inner -= 0.450
+        r_up_outer -= 0.825
+        # print("The UP inner radius is: ", r_up_inner,", and the UP outer radius is: ", r_up_outer)
+        # print("The UP z_max extrema is ", self.upper_port_extrema)
+
         return (
+            # build_upper_port_zone(14.0, 20.0, z_min=5),
             build_upper_port_zone(r_up_inner, r_up_outer, z_max=self.upper_port_extrema),
             r_cut,
             cut_angle,

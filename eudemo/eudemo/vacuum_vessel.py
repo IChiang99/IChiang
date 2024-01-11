@@ -24,6 +24,7 @@ Builder for making a parameterised EU-DEMO vacuum vessel.
 """
 from dataclasses import dataclass
 from typing import Dict, List, Type, Union
+from matplotlib import pyplot as plt
 
 from bluemira.base.builder import Builder, ComponentManager
 from bluemira.base.components import Component, PhysicalComponent
@@ -44,6 +45,7 @@ from bluemira.geometry.tools import (
 from bluemira.geometry.wire import BluemiraWire
 from bluemira.materials.cache import Void
 from eudemo.comp_managers import PortManagerMixin
+from eudemo.ivc.rm_tools import scale_geometry, vv_koz_modifier
 from eudemo.maintenance.duct_connection import pipe_pipe_join
 
 
@@ -183,7 +185,10 @@ class VacuumVesselBuilder(Builder):
             ndiscr=600,
         )
 
+        # mod_inner_vv = vv_koz_modifier(inner_vv, 80.0)
+        
         outer_vv = varied_offset(
+            # mod_inner_vv,
             inner_vv,
             self.params.tk_vv_in.value,
             self.params.tk_vv_out.value,
@@ -191,6 +196,16 @@ class VacuumVesselBuilder(Builder):
             self.params.vv_out_off_deg.value,
             num_points=300,
         )
+
+        ''' Here is the scaling code to change '''
+
+        scale_factor = 0.9310
+        origin = [self.ivc_koz.bounding_box.x_min, 0., self.ivc_koz.center_of_mass[2]]
+        # inner_vv = scale_geometry(mod_inner_vv, scale_factor, 'x', origin=origin)
+
+        inner_vv = scale_geometry(inner_vv, scale_factor, 'x', origin=origin)
+        outer_vv = scale_geometry(outer_vv, scale_factor, 'x', origin=origin)
+
         inner_vv = force_wire_to_spline(inner_vv, n_edges_max=100)
         outer_vv = force_wire_to_spline(outer_vv, n_edges_max=100)
         face = BluemiraFace([outer_vv, inner_vv])

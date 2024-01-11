@@ -48,6 +48,7 @@ from bluemira.geometry.tools import (
     boolean_cut,
     boolean_fuse,
     circular_pattern,
+    linear_pattern,
     extrude_shape,
     make_circle,
     make_polygon,
@@ -187,7 +188,8 @@ def circular_pattern_component(
 
 
 def pattern_revolved_silhouette(
-    face: BluemiraFace, n_seg_p_sector: int, n_sectors: int, gap: float
+    face: BluemiraFace, n_seg_p_sector: int, n_sectors: int, gap: float, 
+    seg_split_geom = 'radial', proportion = 1.0     # New variables for parallel segment split
 ) -> List[BluemiraSolid]:
     """
     Pattern a silhouette with revolutions about the z-axis, inter-spaced with parallel
@@ -203,6 +205,8 @@ def pattern_revolved_silhouette(
         Number of sectors
     gap:
         Absolute distance between segments (parallel)
+    seg_split_geom:
+        Whether the toroidal segment splits are "radial" or "parallel"
 
     Returns
     -------
@@ -220,11 +224,18 @@ def pattern_revolved_silhouette(
             shape, origin=(0, 0, 0), degree=sector_degree, n_shapes=n_seg_p_sector
         )
     else:
-        volume = revolve_shape(
-            face, base=(0, 0, 0), direction=(0, 0, 1), degree=sector_degree
-        )
-        gaps = _generate_gap_volumes(face, n_seg_p_sector, n_sectors, gap)
-        shapes = boolean_cut(volume, gaps)
+        if seg_split_geom == 'radial':
+            volume = revolve_shape(
+                face, base=(0, 0, 0), direction=(0, 0, 1), degree=sector_degree
+            )
+            gaps = _generate_gap_volumes(face, n_seg_p_sector, n_sectors, gap)
+            shapes = boolean_cut(volume, gaps)
+        else:
+            volume = revolve_shape(
+                face, base=(0, 0, 0), direction=(0, 0, 1), degree=sector_degree
+            )
+            gaps = _generate_parallel_gap_volumes(face, n_seg_p_sector, n_sectors, gap, proportion)
+            shapes = boolean_cut(volume, gaps)
     return _order_shapes_anticlockwise(shapes)
 
 
@@ -289,10 +300,10 @@ def pattern_lofted_silhouette(
 
 def _generate_gap_volumes(face, n_seg_p_sector, n_sectors, gap):
     """
-    Generate the gap volumes
+    Generate the gap volumes for a radial split case
     """
     bb = face.bounding_box
-    delta = 1.0
+    delta = 10.0
     x = np.array(
         [bb.x_min - delta, bb.x_max + delta, bb.x_max + delta, bb.x_min - delta]
     )
@@ -308,6 +319,58 @@ def _generate_gap_volumes(face, n_seg_p_sector, n_sectors, gap):
     gap_volumes = circular_pattern(
         gap_volume, degree=degree, n_shapes=n_seg_p_sector + 1
     )
+    return gap_volumes
+
+def _generate_parallel_gap_volumes(face, n_seg_p_sector, n_sectors, gap, proportion):
+    """
+    Generate the gap volumes for a parallel split case
+    """
+    bb = face.bounding_box
+    delta = 3.0
+    x = np.array(
+        [bb.x_min - delta, bb.x_max + delta, bb.x_max + delta, bb.x_min - delta]
+    )
+    z = np.array(
+        [bb.z_min - delta, bb.z_min - delta, bb.z_max + delta, bb.z_max + delta]
+    )
+    poly = make_polygon({"x": x, "y": 0, "z": z}, closed=True)
+    bb_face = BluemiraFace(poly)
+    bb_face.translate((0, -0.5 * gap, 0))
+    gap_volume = extrude_shape(bb_face, (0, gap, 0))
+    degree = 360 / n_sectors
+    # degree += degree / n_seg_p_sector
+    gap_volumes = circular_pattern(
+        gap_volume, degree= 2 * degree, n_shapes=2
+    )
+    c = bb.x_min * np.sqrt(2 * (1 - np.cos(np.pi * 2 / n_sectors)))    # chord length of in-board arc (r = bb.x_min)
+    c *= proportion
+    parallel_gap_volume = gap_volume.deepcopy()
+    parallel_gap_volume.rotate(degree = (180/n_sectors))
+    # if >2 segments, apply offset it to one end of the chord 
+    # and linear_pattern through (number of segments - 1)
+    if n_seg_p_sector > 2:
+        print("parallel cuts")
+        parallel_gap_volume.translate((0, -c/2, 0))
+        n_cuts = n_seg_p_sector - 1
+
+        shapes = linear_pattern(
+            parallel_gap_volume,
+            (0, c/(n_cuts-1), 0), 
+            n_cuts
+        )
+        #
+        # shapes = [parallel_gap_volume]
+        # for i in range(1, n_cuts):
+        #     new_shape = parallel_gap_volume.deepcopy()
+        #     dir = (0, (c * i)/(n_cuts - 1), 0)
+        #     new_shape.translate(dir)
+        #     shapes.append(new_shape)
+        # print(str(n_cuts) + " cuts have made shapes = " + str(len(shapes)))
+        gap_volumes += shapes
+    # otherwise, just take the midplane positioned parallel gap and add that
+    else:
+        print("midplane cut")
+        gap_volumes += parallel_gap_volume
     return gap_volumes
 
 

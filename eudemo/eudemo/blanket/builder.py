@@ -150,6 +150,8 @@ class BlanketBuilder(Builder):
             self.params.n_bb_outboard.value,
             self.params.n_TF.value,
             self.params.c_rm.value,
+            seg_split_geom = 'parallel',      # TODO: put into params properly once this is working
+            proportion = 0.5,
         )
 
         segments = []

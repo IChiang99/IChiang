@@ -224,7 +224,9 @@ class VVUpperPortDuctBuilder(Builder):
         cryostat_ts_xz: BluemiraWire,
     ):
         super().__init__(params, None)
-        koz_offset = self.params.tk_ts.value + self.params.g_vv_ts.value
+        add_offset = 0.0        
+        ''' Change this value for x-direction variation [0 - ]'''
+        koz_offset = self.params.tk_ts.value + self.params.g_vv_ts.value + add_offset
         self.x_min = port_koz.bounding_box.x_min + koz_offset
         self.x_max = port_koz.bounding_box.x_max - koz_offset
         self.z_max = cryostat_ts_xz.bounding_box.z_max + 0.5 * self.params.g_cr_ts.value
@@ -240,7 +242,8 @@ class VVUpperPortDuctBuilder(Builder):
             + self.params.g_ts_tf.value
             + self.params.tk_ts.value
             + self.params.g_vv_ts.value
-        )
+        ) * 0.6                
+        ''' Change this value for y-direction variation [0.5 - 1.0]'''
 
     def build(self) -> Component:
         """Build upper port"""

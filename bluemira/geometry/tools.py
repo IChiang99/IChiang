@@ -1049,6 +1049,41 @@ def circular_pattern(
     return shapes
 
 
+def linear_pattern(
+    shape: BluemiraGeo,
+    direction: Tuple[float, float, float] = (0, 1, 0),
+    n_shapes: int = 10,
+) -> List[BluemiraGeo]:
+    """
+    Make a equally spaced linear pattern of shapes.
+
+    Parameters
+    ----------
+    shape:
+        Shape to pattern
+    direction:
+        Direction vector of the linear pattern
+    n_shapes:
+        Number of shapes to pattern
+
+    Returns
+    -------
+    List of patterned shapes, the first element is the original shape
+    """
+
+    shapes = [shape]
+    for i in range(1, n_shapes):
+        new_shape = shape.deepcopy()
+        dir = (
+            direction[0] * i,
+            direction[1] * i,
+            direction[2] * i,
+        )
+        new_shape.translate(dir)
+        shapes.append(new_shape)
+    return shapes
+
+
 def mirror_shape(
     shape: BluemiraGeo, base: tuple, direction: tuple, label=""
 ) -> BluemiraGeo:
