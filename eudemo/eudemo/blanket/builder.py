@@ -21,6 +21,8 @@
 """
 EUDEMO builder for blanket
 """
+import numpy as np
+
 from dataclasses import dataclass
 from typing import Dict, List, Type, Union
 
@@ -31,12 +33,23 @@ from bluemira.builders.tools import (
     apply_component_display_options,
     circular_pattern_component,
     get_n_sectors,
+    linear_pattern,
     pattern_revolved_silhouette,
 )
 from bluemira.display.palettes import BLUE_PALETTE
+from bluemira.geometry.constants import VERY_BIG
 from bluemira.geometry.face import BluemiraFace
+from bluemira.geometry.solid import BluemiraGeo, BluemiraSolid
 from bluemira.geometry.placement import BluemiraPlacement
-from bluemira.geometry.tools import slice_shape
+from bluemira.geometry.tools import (
+    boolean_cut,
+    boolean_fuse,
+    extrude_shape,
+    make_polygon,
+    offset_wire,
+    slice_shape,
+)
+from bluemira.geometry.wire import BluemiraWire
 
 
 @dataclass
@@ -61,8 +74,18 @@ class BlanketBuilder(Builder):
         the parameter frame
     build_config:
         the build config
-    blanket_silhouette:
+    ib_silhouette:
+        inboard blanket silhouette
+    ob_silhouette:
+        outboard blanket silhoutte
+    bb_silhouette:
         breeding blanket silhouette
+    split_geom:
+        IB/OB splitter geom
+    vv_void:
+        VV voidspace silhouette
+    chimney_profiles
+        top-down chimney profiles
     """
 
     BB = "BB"
@@ -77,20 +100,42 @@ class BlanketBuilder(Builder):
         build_config: Dict,
         ib_silhouette: BluemiraFace,
         ob_silhouette: BluemiraFace,
+        bb_silhouette: BluemiraFace,
+        split_geom: BluemiraFace,
+        vv_void: BluemiraWire,
+        chimney_profiles: Union[BluemiraFace, List[BluemiraFace]] = [],
     ):
         super().__init__(params, build_config)
         self.ib_silhouette = ib_silhouette
         self.ob_silhouette = ob_silhouette
+        self.bb_silhouette = bb_silhouette
+        self.split_face = split_geom
+        self.vv_void = vv_void
+        self.profiles = chimney_profiles
 
     def build(self) -> Component:
         """
         Build the blanket component.
         """
         segments = self.get_segments(self.ib_silhouette, self.ob_silhouette)
+        self.vv_void.close()
+        offset_wire(self.vv_void, self.params.c_rm.value)
+        solid_void = pattern_revolved_silhouette(
+            BluemiraFace([self.vv_void]), 1, 16, self.params.c_rm.value
+        )
+        vv_void = solid_void[0]
+        vv_void.rotate(degree= -180/self.params.n_TF.value)
+        chimney_solids = self.chimney_builder(
+            self.profiles, 
+            vv_void,
+        )
+        whole = self.get_whole_3D(self.bb_silhouette, chimney_solids)
         return self.component_tree(
             xz=[self.build_xz(self.ib_silhouette, self.ob_silhouette)],
             xy=self.build_xy(segments),
-            xyz=self.build_xyz(segments, degree=0),
+            # for switching between ib/ob and ring blanket
+            # xyz = self.build_xyz(segments, degree=0),
+            xyz = self.build_new_xyz(whole, degree=0)
         )
 
     def build_xz(self, ibs_silhouette: BluemiraFace, obs_silhouette: BluemiraFace):
@@ -133,6 +178,42 @@ class BlanketBuilder(Builder):
             n_sectors,
             degree=sector_degree * n_sectors,
         )
+    
+    def build_new_xyz(self, whole: PhysicalComponent, degree: float = 360.0):
+        """
+        Create and planar segment the whole sector blanket in 3D
+        """
+        sector_degree, n_sectors = get_n_sectors(self.params.n_TF.value, degree)
+        # make the IB/OB split volume
+        split_vec = self.split_face.normal_at()
+        foo = extrude_shape(self.split_face, split_vec * VERY_BIG)    
+        bar = extrude_shape(self.split_face, split_vec * -VERY_BIG)
+        cut_tool = boolean_fuse([foo, bar])
+        # apply the split volume (split ib from ob)
+        new_ib, new_ob = boolean_cut(whole.shape, cut_tool)
+        # make the segments
+        ib_width = self.calculate_width(new_ib.bounding_box.x_max, sector_degree)
+        ob_width = self.calculate_width(self.bb_silhouette.bounding_box.x_max, sector_degree)
+        ibs = self.segment_blanket(new_ib, self.params.n_bb_inboard.value, ib_width)
+        obs = self.segment_blanket(new_ob, self.params.n_bb_outboard.value, ob_width)
+        # print("There are ",len(ibs),"IBS and n_OBS:", len(obs))
+        segments = []
+        for name, base_no, bs_shape in [
+            [self.IBS, 0, ibs],      # update new_ib & new_ob with split segments list var name
+            [self.OBS, self.params.n_bb_inboard.value + 1, obs]
+        ]:
+            for no, shape in enumerate(bs_shape):
+                segment = PhysicalComponent(f"{name}_{no}", shape)
+                apply_component_display_options(
+                    segment, color=BLUE_PALETTE[self.BB][base_no + no]
+                )
+                segments.append(segment)
+
+        return circular_pattern_component(
+            Component(self.BB, children=segments),
+            n_sectors,
+            degree=sector_degree * n_sectors,
+        )
 
     def get_segments(self, ibs_silhouette: BluemiraFace, obs_silhouette: BluemiraFace):
         """
@@ -150,8 +231,8 @@ class BlanketBuilder(Builder):
             self.params.n_bb_outboard.value,
             self.params.n_TF.value,
             self.params.c_rm.value,
-            seg_split_geom = 'parallel',      # TODO: put into params properly once this is working
-            proportion = 0.5,
+            # seg_split_geom = 'parallel',      # TODO: put into params properly
+            # proportion = 0.5,
         )
 
         segments = []
@@ -166,3 +247,72 @@ class BlanketBuilder(Builder):
                 )
                 segments.append(segment)
         return segments
+    
+    def chimney_builder(
+            self,
+            profiles: Union[BluemiraFace, List[BluemiraFace]], 
+            vv_void: BluemiraSolid
+    ) -> List[BluemiraSolid]:
+        """Turns chimney xy into a list of chimney solids"""
+        if isinstance(profiles, BluemiraFace):
+            profiles = [profiles]
+        chimneys = []
+        for face in profiles:
+            # make faces into prismatic solids
+            height = vv_void.center_of_mass[2] - face.center_of_mass[2]
+            vec = (0., 0., height)
+            column = extrude_shape(face, vec)
+            chimney = boolean_cut(column, [vv_void])
+            chimneys.extend(chimney)
+        return chimneys
+    
+    def calculate_width(self, radius: float, angle: float) -> float:
+        return np.sqrt(2) * radius * np.sqrt(1 - np.cos(np.deg2rad(angle)))
+    
+    def segment_blanket(self, shape: BluemiraGeo, n_segments: int, bb_width: float, angle: float = 0) -> List[BluemiraGeo]:
+        '''
+        Segments a blanket solid using parallel radial cuts
+        '''
+        c_rm = self.params.c_rm.value
+        half_c = -c_rm/2
+        # set up the cut-tool 
+        x = [0, VERY_BIG, VERY_BIG, 0]
+        y = [half_c, half_c, half_c, half_c]
+        z = [-VERY_BIG, -VERY_BIG, VERY_BIG, VERY_BIG]
+        foo = BluemiraFace(make_polygon({"x": x, "y": y, "z": z}, closed=True))    # Make a big xz-cut tool
+        xz_cut_tool = extrude_shape(foo, (0., c_rm, 0.))
+        # # xz_cut_tool.rotate(degree = half_a)     # Rotate a half-sector around
+        # set up the translation vector
+        # unit_vec = [
+        #     -np.sin(np.deg2rad(half_a)), 
+        #     np.cos(np.deg2rad(half_a)), 
+        #     0.]
+        unit_vec = [0., 1., 0.]
+        spacing_vec = [i * (bb_width/n_segments) for i in unit_vec]
+        translate_vec = [i * (-bb_width/2) for i in unit_vec]
+        # generate cut tools and perform the segmentation
+        xz_cut_tool.translate(tuple(translate_vec))
+        cut_tools = linear_pattern(xz_cut_tool, tuple(spacing_vec), n_segments)
+        segments = boolean_cut(shape, cut_tools)
+        return segments
+    
+    def get_whole_3D(self, whole_profile: BluemiraFace, chimneys: List[BluemiraGeo] = []):
+        """
+        Get an unsplit blanket component with chimneys
+        """
+        solid = pattern_revolved_silhouette(
+            whole_profile,
+            1,
+            16,
+            self.params.c_rm.value,
+        )
+
+        shape = solid[0]
+        shape.rotate(degree = -180/self.params.n_TF.value)
+        for chimney in chimneys:
+            shape = boolean_fuse([shape, chimney])
+        sector = PhysicalComponent("BB", shape)
+        apply_component_display_options(
+            sector, color=BLUE_PALETTE[self.BB][0]
+        )
+        return sector

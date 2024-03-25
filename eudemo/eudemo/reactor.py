@@ -55,7 +55,7 @@ from bluemira.builders.thermal_shield import CryostatTSBuilder, VVTSBuilder
 from bluemira.equilibria.equilibrium import Equilibrium
 from bluemira.equilibria.run import Snapshot
 from bluemira.geometry.face import BluemiraFace
-from bluemira.geometry.tools import distance_to, interpolate_bspline, offset_wire
+from bluemira.geometry.tools import distance_to, interpolate_bspline, make_polygon, offset_wire
 from bluemira.geometry.wire import BluemiraWire
 from eudemo.blanket import Blanket, BlanketBuilder, BlanketDesigner
 from eudemo.coil_structure import build_coil_structures_component
@@ -218,17 +218,44 @@ def build_blanket(
     blanket_face,
     r_inner_cut: float,
     cut_angle: float,
+    up_void
 ) -> Blanket:
     """Build the blanket given a silhouette of a sector."""
     designer = BlanketDesigner(
-        params, blanket_boundary, blanket_face, r_inner_cut, cut_angle
+        params, blanket_boundary, blanket_face, up_void, r_inner_cut, cut_angle, build_config
     )
-    ib_silhouette, ob_silhouette = designer.execute()
-    scaled_ibb_wire = scale_geometry(BluemiraWire(ib_silhouette.wires), scale_factor, 'x', origin=origin)
-    ib_silhouette = face_the_wire(scaled_ibb_wire)
-    scaled_obb_wire = scale_geometry(BluemiraWire(ob_silhouette.wires), scale_factor, 'x', origin=origin)
-    ob_silhouette = face_the_wire(scaled_obb_wire)
-    builder = BlanketBuilder(params, build_config, ib_silhouette, ob_silhouette)
+    ib_silhouette, ob_silhouette, bb_silhouette, split_geom, chimneys = designer.execute()
+    # scaled_ibb_wire = scale_geometry(BluemiraWire(ib_silhouette.wires), scale_factor, 'x', origin=origin)
+    # ib_silhouette = face_the_wire(scaled_ibb_wire)
+
+    # # Option 1 - interpolate bspline
+    # coords = ob_silhouette.vertexes
+    # wire = interpolate_bspline({"x": coords.x, "z": coords.z}, closed = True)
+    # # Option 2 - discretize
+    # wire = BluemiraWire(ob_silhouette.wires).discretize(byedges=True, dl = 0.1)
+    # Option 3 - bespoke discretize
+    # wire = discretize_spline_geom(BluemiraWire(ob_silhouette.edges), 20)
+    # # Option 4 - piecewise discretization
+    # edges = ob_silhouette.edges
+    # # edges = edges[::-1]
+    # wires = [discretize_spline_geom(section, 5, closed_ = False, reversed=True) for section in edges]
+    # # wires[0] = discretize_spline_geom(edges[1], 5, closed_= False, reversed=False)
+    # wires[1] = discretize_spline_geom(edges[-1], 20, closed_= False, reversed=False)
+    # wire = BluemiraWire(wires)
+
+    # scaled_obb_wire = scale_geometry(BluemiraWire(ob_silhouette.wires), scale_factor, 'x', origin=origin)
+    # ob_silhouette = face_the_wire(scaled_obb_wire)
+
+    builder = BlanketBuilder(
+        params, 
+        build_config, 
+        ib_silhouette, 
+        ob_silhouette, 
+        bb_silhouette,
+        split_geom,
+        blanket_boundary,
+        chimneys,
+        )
     return Blanket(builder.build())
 
 
@@ -257,7 +284,6 @@ def build_pf_coils(
     """
     Design and build the PF coils for the reactor.
     """
-    print("Running build_pf_coil from reactor.py")
     pf_coil_keep_out_zones_new = []
     # This is a very crude way of forcing PF coil centrepoints away from the KOZs
     # to stop clashes between ports and PF coil corners
@@ -280,6 +306,12 @@ def build_pf_coils(
     )
 
     coilset = pf_designer.execute()
+    pf7_dx = coilset["PF_7"].dx
+    pf8_dx = coilset["PF_8"].dx
+    coilset["PF_7"].x = UP_x_min - 0.59 - pf7_dx
+    coilset["PF_8"].x = UP_x_max + 0.3903 + pf8_dx
+    # coilset["PF_7"].z += -0.7
+    # coilset["PF_8"].z += 0.7
     component = build_pf_coils_component(params, build_config, coilset)
     return PFCoil(component, coilset)
 
@@ -464,12 +496,6 @@ if __name__ == "__main__":
         profiles,
     )
 
-    # reactor.plasma = build_plasma(
-    #     reactor_config.params_for("Plasma"),
-    #     reactor_config.config_for("Plasma"),
-    #     reference_eq,
-    # )
-
     ivc_shapes = design_ivc(
         reactor_config.params_for("IVC").global_params,
         reactor_config.config_for("IVC"),
@@ -477,8 +503,8 @@ if __name__ == "__main__":
     )
 
     ''' Here is the scaling code to change '''        
-    scale_factor = 0.9310
-    origin = [ivc_shapes.blanket_face.bounding_box.x_min, 0., ivc_shapes.blanket_face.center_of_mass[2]]
+    scale_factor = 1.0
+    origin = [ivc_shapes.outer_boundary.bounding_box.x_min, 0., 0.]
     reactor.plasma = build_plasma(
     reactor_config.params_for("Plasma"),
     reactor_config.config_for("Plasma"),
@@ -503,19 +529,29 @@ if __name__ == "__main__":
         ivc_shapes.blanket_face,
     )
     upper_port_koz_xz, r_inner_cut, cut_angle = upper_port_designer.execute()
-    ''' This scales the Upper Port in the x-z plane '''
-    scaled_wire = scale_geometry(BluemiraWire(upper_port_koz_xz.wires), scale_factor, 'x', origin=origin)
-    upper_port_koz_xz = face_the_wire(scaled_wire)
+    ''' This is a temporary bodge to edit UP xz profile'''
+    outer_vv = scale_geometry(ivc_shapes.outer_boundary, scale_factor, 'x', origin=origin)
+    UP_x_min = outer_vv.bounding_box.x_min + 1.479
+    UP_x_max = outer_vv.bounding_box.x_max + 0.029
+    x = [UP_x_min, UP_x_max, UP_x_max, UP_x_min]
+    z = [0, 0, 10, 10]
+    upper_port_koz_xz = BluemiraFace(make_polygon({"x": x, "y": 0, "z": z}, closed=True))
+    # ''' This scales the Upper Port in the x-z plane '''
+    # scaled_wire = scale_geometry(BluemiraWire(upper_port_koz_xz.wires), scale_factor, 'x', origin=origin)
+    # upper_port_koz_xz = face_the_wire(scaled_wire)
 
+    # ''' Trying to output a O-shaped blanket'''
+    # outer = scale_geometry(ivc_shapes.outer_boundary, scale_factor, 'x', origin=origin)
+    # inner = scale_geometry(ivc_shapes.inner_boundary, scale_factor, 'x', origin=origin)
+    # whole_profile = BluemiraFace([outer, inner], "whole_profile")
 
-    reactor.blanket = build_blanket(
-        reactor_config.params_for("Blanket"),
-        reactor_config.config_for("Blanket"),
-        ivc_shapes.inner_boundary,
-        ivc_shapes.blanket_face,
-        r_inner_cut - 0.25,        # Editted to shift the cut in-board
-        cut_angle,
-    )
+    up_ro = upper_port_koz_xz.bounding_box.x_max
+    x_min = ivc_shapes.outer_boundary.bounding_box.x_min
+    semisector_angle = np.deg2rad(180 / reactor.n_sectors)
+    curve_dx = (x_min + 0.02) - ((x_min + 0.02)*np.cos(semisector_angle))
+    split_radius = float(x_min + (up_ro - x_min - 0.02 - curve_dx)/2)
+    # vv_void = reactor.vacuum_vessel.component().get_component("xyz").get_component("Sector 1").get_component("Vessel voidspace 1").shape
+
     vv_thermal_shield = build_vacuum_vessel_thermal_shield(
         reactor_config.params_for("Thermal shield"),
         reactor_config.config_for("Thermal shield", "VVTS"),
@@ -660,6 +696,21 @@ if __name__ == "__main__":
     #     n_TF=reactor_config.global_params.n_TF.value,
     # )
 
+    up_boundary = vv_upper_port.get_component("xy").get_component(vv_upper_port.name + " voidspace").shape
+
+    reactor.blanket = build_blanket(
+        reactor_config.params_for("Blanket"),
+        reactor_config.config_for("Blanket"),
+        ivc_shapes.inner_boundary,
+        ivc_shapes.blanket_face,
+        # r_inner_cut,        # Editted to shift the cut in-board
+        split_radius,
+        cut_angle,
+        # whole_profile,
+        # vv_void,
+        up_boundary
+    )
+
     # from bluemira.display import show_cad
 
     # debug = [upper_port_koz_xz, eq_port_koz_xz, lower_port_koz_xz]
@@ -668,25 +719,25 @@ if __name__ == "__main__":
     # # include coil XS.
     # show_cad(debug)
 
-    plt.savefig("BLUEMIRA_PROFILE.png")
-    plt.cla()
+    # plt.savefig("BLUEMIRA_PROFILE.png")
+    # plt.cla()
     print("Calculations complete - running save_cad")
     components = [
         reactor.plasma,
         reactor.vacuum_vessel,
         reactor.blanket, 
-        # reactor.pf_coils, 
-        # reactor.tf_coils,
+        reactor.pf_coils, 
+        reactor.tf_coils,
         ]
     
     reactor.save_cad(with_components= components,
                      n_sectors=1, 
-                     filename="width_neg7pc",
+                     filename="rotation_test",
                      cad_format='stp', 
                     #  directory="\BM_aspect_ratio_study"
                     )
     
-    print("Saving complete - running show_cad")
+    # print("Saving complete - running show_cad")
     # reactor.show_cad("xz")
     # reactor.show_cad(n_sectors=2)
 

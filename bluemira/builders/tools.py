@@ -321,12 +321,14 @@ def _generate_gap_volumes(face, n_seg_p_sector, n_sectors, gap):
     )
     return gap_volumes
 
-def _generate_parallel_gap_volumes(face, n_seg_p_sector, n_sectors, gap, proportion):
+def _generate_parallel_gap_volumes(
+        face:BluemiraFace, n_seg_p_sector: int, n_sectors: int, gap: float, proportion:float,
+    ):
     """
     Generate the gap volumes for a parallel split case
     """
     bb = face.bounding_box
-    delta = 3.0
+    delta = 10.0
     x = np.array(
         [bb.x_min - delta, bb.x_max + delta, bb.x_max + delta, bb.x_min - delta]
     )
@@ -369,7 +371,6 @@ def _generate_parallel_gap_volumes(face, n_seg_p_sector, n_sectors, gap, proport
         gap_volumes += shapes
     # otherwise, just take the midplane positioned parallel gap and add that
     else:
-        print("midplane cut")
         gap_volumes += parallel_gap_volume
     return gap_volumes
 
@@ -533,6 +534,8 @@ def build_sectioned_xyz(
             direction=(0, 0, 1),
             degree=sector_degree if enable_sectioning else min(359, degree),
         )
+        shape.rotate(degree= -sector_degree/2)
+        # shape.rotate(degree = sector_degree)
         body = PhysicalComponent(nam, shape, material=mat)
         apply_component_display_options(body, color=color)
         bodies.append(body)

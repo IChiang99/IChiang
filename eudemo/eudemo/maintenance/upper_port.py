@@ -248,8 +248,8 @@ class UpperPortKOZDesigner(Designer[Tuple[BluemiraFace, float, float]]): # appen
 
         # r_up_inner -= 0.450
         # r_up_outer -= 0.825
-        r_up_inner -= 0.450
-        r_up_outer -= 0.825
+        r_up_inner -= 1.0
+        r_up_outer -= 0.425
         # print("The UP inner radius is: ", r_up_inner,", and the UP outer radius is: ", r_up_outer)
         # print("The UP z_max extrema is ", self.upper_port_extrema)
 

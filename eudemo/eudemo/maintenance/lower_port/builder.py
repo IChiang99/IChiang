@@ -274,6 +274,6 @@ def build_lower_port_xyz(
     duct = boolean_cut(duct, [angled_void_piece])[0]
 
     # rotate pieces to correct positions
-    duct.rotate(degree=180 / n_TF)
-    void.rotate(degree=180 / n_TF)
+    # duct.rotate(degree=180 / n_TF)
+    # void.rotate(degree=180 / n_TF)
     return duct, void

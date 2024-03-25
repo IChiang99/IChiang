@@ -291,14 +291,14 @@
     "long_name": "Non-inductive current drive fraction"
   },
   "fw_a_max": {
-    "value": 25,
+    "value": 5,
     "unit": "degree",
     "source": "Input",
     "long_name": "Maximum panel angle",
     "description": "Maximum turning angle (clockwise tail-to-tail angle) between adjacent first wall panels"
   },
   "fw_dL_min": {
-    "value": 0.3,
+    "value": 0.02,
     "source": "Input",
     "unit": "meter",
     "long_name": "Minimum panel length",
@@ -383,7 +383,7 @@
     "long_name": "Normalised internal plasma inductance"
   },
   "n_TF": {
-    "value": 18,
+    "value": 16,
     "unit": "dimensionless",
     "source": "Input",
     "long_name": "Number of TF coils"

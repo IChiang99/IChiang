@@ -21,7 +21,7 @@
 """Designer for EUDEMO blankets."""
 
 from dataclasses import dataclass
-from typing import Dict, Optional, Tuple, TypeVar, Union
+from typing import Dict, List, Optional, Tuple, TypeVar, Union
 
 import numpy as np
 
@@ -31,7 +31,7 @@ from bluemira.base.look_and_feel import bluemira_warn
 from bluemira.base.parameter_frame import Parameter, ParameterFrame
 from bluemira.geometry.constants import VERY_BIG
 from bluemira.geometry.face import BluemiraFace
-from bluemira.geometry.tools import boolean_cut, make_polygon
+from bluemira.geometry.tools import boolean_cut, make_polygon, offset_wire
 from bluemira.geometry.wire import BluemiraWire
 from eudemo.blanket.panelling import PanellingDesigner
 from eudemo.tools import get_inner_cut_point
@@ -86,6 +86,8 @@ class BlanketDesigner(Designer[Tuple[BluemiraFace, BluemiraFace]]):
         The inner boundary of this face *must* be the same as the
         :obj:`blanket_boundary`. It's difficult to reverse engineer the
         wire from the face, so both are required.
+    chimney_boundary:
+        A face defining the vertical voidspace of the Upper Port
     r_inner_cut:
         The x coordinate at which to cut the blanket into segments.
         Note that this is the coordinate of the x-most end of the cut on
@@ -94,6 +96,8 @@ class BlanketDesigner(Designer[Tuple[BluemiraFace, BluemiraFace]]):
         The angle at which to segment the blanket [degrees].
         A positive angle will result in a downward top-to-bottom slope
         on the inboard.
+    build_config:
+        the build config
     """
 
     param_cls = BlanketDesignerParams
@@ -104,6 +108,7 @@ class BlanketDesigner(Designer[Tuple[BluemiraFace, BluemiraFace]]):
         params: Union[Dict, ParameterFrame],
         blanket_boundary: BluemiraWire,
         blanket_silhouette: BluemiraFace,
+        chimney_boundary: BluemiraFace,
         r_inner_cut: float,
         cut_angle: float,
         build_config: Optional[Dict] = None,
@@ -111,6 +116,7 @@ class BlanketDesigner(Designer[Tuple[BluemiraFace, BluemiraFace]]):
         super().__init__(params, build_config)
         self.boundary = blanket_boundary
         self.silhouette = blanket_silhouette
+        self.ch_bound = chimney_boundary
         self.r_inner_cut = r_inner_cut
         if abs(cut_angle) >= 90:
             raise ValueError(
@@ -118,7 +124,7 @@ class BlanketDesigner(Designer[Tuple[BluemiraFace, BluemiraFace]]):
             )
         self.cut_angle = cut_angle
 
-    def run(self) -> Tuple[BluemiraFace, BluemiraFace]:
+    def run(self) -> Tuple[BluemiraFace, BluemiraFace, BluemiraFace, BluemiraFace, List[BluemiraFace]]:
         """Run the blanket design problem."""
         segments = self.segment_blanket()
         # Inboard
@@ -129,7 +135,16 @@ class BlanketDesigner(Designer[Tuple[BluemiraFace, BluemiraFace]]):
         ob_panels = self.panel_boundary(segments.outboard_boundary)
         ob_panels_face = BluemiraFace(ob_panels)
         cut_ob = boolean_cut(segments.outboard, [ob_panels_face])[0]
-        return cut_ib, cut_ob
+        # Whole
+        bb_panels = self.panel_boundary(self.boundary)
+        bb_panels_face = BluemiraFace(bb_panels)
+        cut_bb = boolean_cut(self.silhouette, [bb_panels_face])
+        # Split tool
+        split_geom = self._make_cutting_face()
+        split_geom.translate((0., 0., -0.2))
+        # Chimney xy profiles
+        chimney_profiles = self.design_chimney_xy(self.ch_bound, cut_ob, z_max=8.)
+        return cut_ib, cut_ob, cut_bb[0], split_geom, chimney_profiles
 
     def segment_blanket(self) -> BlanketSegments:
         """
@@ -187,3 +202,64 @@ class BlanketDesigner(Designer[Tuple[BluemiraFace, BluemiraFace]]):
             )
         inboard, outboard = sorted(parts, key=lambda x: x.center_of_mass[0])[:2]
         return inboard, outboard
+    
+    def design_chimney_xy(
+            self,
+            chimney_xy: BluemiraFace,
+            ob_profile: BluemiraFace,
+            r_max: Optional[float] = None, 
+            z_max: float = 10,
+            interface_width = 0.333,       # Twistlock head width for 80 tonnes at SF5 
+        ) -> List[BluemiraFace]:
+        """ 
+        Creates trapezoid profiles for IB and OB chimney sets (pre-segmentation)
+        
+        Parameters
+        ----------
+        chimney_xy:
+            BluemiraFace of the chimney xy voidspace
+        ob_profile:
+            BluemiraFace of the OB toroidal profile
+        r_max: 
+            Optional float for positioning OB chimneys
+        z_max:
+            Float height of chimneys (from geom origin)
+        interface_width:
+            Float minimum half-width of chimney
+        """
+        # Mise en place 
+        c_rm = self.params.c_rm.value
+        r_split = self.r_inner_cut
+        boundary = offset_wire(BluemiraWire(chimney_xy.edges), -c_rm, open_wire=False)
+        total_xy = BluemiraFace(boundary)
+        cog_x = ob_profile.center_of_mass[0]
+        x_pairs = []        # Start and end x's for blanket cut-out zones
+        cut_outs = []
+        y_min = boundary.bounding_box.y_min - 1
+        y_max = boundary.bounding_box.y_max + 1
+        # Setting r_max
+        if (r_max == None):
+            r_max = total_xy.bounding_box.x_max
+        # Making total_xy coplanar
+        if total_xy.center_of_mass[2] != z_max:
+            total_xy.translate((0., 0., z_max - total_xy.center_of_mass[2]))
+        
+        if r_max - r_split < (2 * interface_width):
+            raise Warning("Insufficient space on OB chimney for interface")
+        # if OB COG is too close to outer wall
+        if (r_max - cog_x) < interface_width:      
+            x_pairs.append([r_split, r_max - (2 * interface_width)])
+        else:
+            # if OB COG too close to split point
+            if (cog_x - r_split) < interface_width: 
+                x_pairs.append([r_split + (2 * interface_width), r_max])
+            else:
+                x_pairs.append([r_split, cog_x - interface_width])
+                x_pairs.append([cog_x + interface_width, r_max])
+        
+        for start, end in x_pairs:
+            x = [start, start, end, end]
+            y = [y_min, y_max, y_max, y_min]
+            foo = BluemiraFace(make_polygon({"x": x, "y": y, "z": z_max}, closed=True))
+            cut_outs.append(foo)
+        return boolean_cut(total_xy, cut_outs)

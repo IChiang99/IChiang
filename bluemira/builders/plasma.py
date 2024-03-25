@@ -140,6 +140,7 @@ class PlasmaBuilder(Builder):
             degree=sector_degree * n_sectors,
             label=self.LCFS,
         )
+        solid.rotate(degree=-sector_degree / 2)
         component = PhysicalComponent(self.LCFS, solid)
         apply_component_display_options(
             component, color=BLUE_PALETTE["PL"], transparency=0.3

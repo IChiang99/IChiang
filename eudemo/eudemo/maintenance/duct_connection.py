@@ -185,11 +185,11 @@ class TSEquatorialPortDuctBuilder(Builder):
         degree = 180 / self.params.n_TF.value
         vec = (self.params.R_0.value - self.x_max, 0, 0)
         port = extrude_shape(yz_face, vec)
-        port.rotate(degree=degree)
+        # port.rotate(degree=degree)
         comp = PhysicalComponent(self.name, port)
 
         void = extrude_shape(yz_voidface, vec)
-        void.rotate(degree=degree)
+        # void.rotate(degree=degree)
         void = PhysicalComponent(self.name + " voidspace", void, material=Void("vacuum"))
 
         apply_component_display_options(comp, BLUE_PALETTE["VV"][0])
@@ -348,11 +348,11 @@ class VVEquatorialPortDuctBuilder(Builder):
         degree = 180 / self.params.n_TF.value
         vec = (self.params.R_0.value - self.x_max, 0, 0)
         port = extrude_shape(yz_face, vec)
-        port.rotate(degree=degree)
+        # port.rotate(degree=degree)
         comp = PhysicalComponent(self.name, port)
 
         void = extrude_shape(yz_voidface, vec)
-        void.rotate(degree=degree)
+        # void.rotate(degree=degree)
         void = PhysicalComponent(self.name + " voidspace", void, material=Void("vacuum"))
 
         apply_component_display_options(comp, BLUE_PALETTE["VV"][0])
@@ -452,7 +452,7 @@ def make_upper_port_xy_face(
     )
 
     xy_face = BluemiraFace((outer_wire, inner_wire))
-    xy_face.rotate(degree=np.rad2deg(half_beta))
+    #  xy_face.rotate(degree=np.rad2deg(half_beta))
 
     return xy_face
 
