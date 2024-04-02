@@ -124,7 +124,11 @@ class BlanketDesigner(Designer[Tuple[BluemiraFace, BluemiraFace]]):
             )
         self.cut_angle = cut_angle
 
-    def run(self) -> Tuple[BluemiraFace, BluemiraFace, BluemiraFace, BluemiraFace, List[BluemiraFace]]:
+    def run(
+        self,
+    ) -> Tuple[
+        BluemiraFace, BluemiraFace, BluemiraFace, BluemiraFace, List[BluemiraFace]
+    ]:
         """Run the blanket design problem."""
         segments = self.segment_blanket()
         # Inboard
@@ -141,9 +145,9 @@ class BlanketDesigner(Designer[Tuple[BluemiraFace, BluemiraFace]]):
         cut_bb = boolean_cut(self.silhouette, [bb_panels_face])
         # Split tool
         split_geom = self._make_cutting_face()
-        split_geom.translate((0., 0., -0.2))
+        split_geom.translate((0.0, 0.0, -0.2))
         # Chimney xy profiles
-        chimney_profiles = self.design_chimney_xy(self.ch_bound, cut_ob, z_max=8.)
+        chimney_profiles = self.design_chimney_xy(self.ch_bound, cut_ob, z_max=8.0)
         return cut_ib, cut_ob, cut_bb[0], split_geom, chimney_profiles
 
     def segment_blanket(self) -> BlanketSegments:
@@ -202,61 +206,61 @@ class BlanketDesigner(Designer[Tuple[BluemiraFace, BluemiraFace]]):
             )
         inboard, outboard = sorted(parts, key=lambda x: x.center_of_mass[0])[:2]
         return inboard, outboard
-    
+
     def design_chimney_xy(
-            self,
-            chimney_xy: BluemiraFace,
-            ob_profile: BluemiraFace,
-            r_max: Optional[float] = None, 
-            z_max: float = 10,
-            interface_width = 0.333,       # Twistlock head width for 80 tonnes at SF5 
-        ) -> List[BluemiraFace]:
-        """ 
+        self,
+        chimney_xy: BluemiraFace,
+        ob_profile: BluemiraFace,
+        r_max: Optional[float] = None,
+        z_max: float = 10,
+        interface_width=0.333,  # Twistlock head width for 80 tonnes at SF5
+    ) -> List[BluemiraFace]:
+        """
         Creates trapezoid profiles for IB and OB chimney sets (pre-segmentation)
-        
+
         Parameters
         ----------
         chimney_xy:
             BluemiraFace of the chimney xy voidspace
         ob_profile:
             BluemiraFace of the OB toroidal profile
-        r_max: 
+        r_max:
             Optional float for positioning OB chimneys
         z_max:
             Float height of chimneys (from geom origin)
         interface_width:
             Float minimum half-width of chimney
         """
-        # Mise en place 
+        # Mise en place
         c_rm = self.params.c_rm.value
         r_split = self.r_inner_cut
         boundary = offset_wire(BluemiraWire(chimney_xy.edges), -c_rm, open_wire=False)
         total_xy = BluemiraFace(boundary)
         cog_x = ob_profile.center_of_mass[0]
-        x_pairs = []        # Start and end x's for blanket cut-out zones
+        x_pairs = []  # Start and end x's for blanket cut-out zones
         cut_outs = []
         y_min = boundary.bounding_box.y_min - 1
         y_max = boundary.bounding_box.y_max + 1
         # Setting r_max
-        if (r_max == None):
+        if r_max == None:
             r_max = total_xy.bounding_box.x_max
         # Making total_xy coplanar
         if total_xy.center_of_mass[2] != z_max:
-            total_xy.translate((0., 0., z_max - total_xy.center_of_mass[2]))
-        
+            total_xy.translate((0.0, 0.0, z_max - total_xy.center_of_mass[2]))
+
         if r_max - r_split < (2 * interface_width):
             raise Warning("Insufficient space on OB chimney for interface")
         # if OB COG is too close to outer wall
-        if (r_max - cog_x) < interface_width:      
+        if (r_max - cog_x) < interface_width:
             x_pairs.append([r_split, r_max - (2 * interface_width)])
         else:
             # if OB COG too close to split point
-            if (cog_x - r_split) < interface_width: 
+            if (cog_x - r_split) < interface_width:
                 x_pairs.append([r_split + (2 * interface_width), r_max])
             else:
                 x_pairs.append([r_split, cog_x - interface_width])
                 x_pairs.append([cog_x + interface_width, r_max])
-        
+
         for start, end in x_pairs:
             x = [start, start, end, end]
             y = [y_min, y_max, y_max, y_min]

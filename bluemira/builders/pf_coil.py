@@ -165,7 +165,7 @@ class PFCoilBuilder(Builder):
         components = []
         for c in xz_components:
             shape = revolve_shape(c.shape, degree=sector_degree * n_sectors)
-            shape.rotate(degree=-sector_degree/2)
+            shape.rotate(degree=-sector_degree / 2)
             c_xyz = PhysicalComponent(c.name, shape)
             apply_component_display_options(
                 c_xyz, color=c.plot_options.face_options["color"]

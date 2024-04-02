@@ -48,8 +48,8 @@ from bluemira.geometry.tools import (
     boolean_cut,
     boolean_fuse,
     circular_pattern,
-    linear_pattern,
     extrude_shape,
+    linear_pattern,
     make_circle,
     make_polygon,
     revolve_shape,
@@ -188,8 +188,12 @@ def circular_pattern_component(
 
 
 def pattern_revolved_silhouette(
-    face: BluemiraFace, n_seg_p_sector: int, n_sectors: int, gap: float, 
-    seg_split_geom = 'radial', proportion = 1.0     # New variables for parallel segment split
+    face: BluemiraFace,
+    n_seg_p_sector: int,
+    n_sectors: int,
+    gap: float,
+    seg_split_geom="radial",
+    proportion=1.0,  # New variables for parallel segment split
 ) -> List[BluemiraSolid]:
     """
     Pattern a silhouette with revolutions about the z-axis, inter-spaced with parallel
@@ -224,7 +228,7 @@ def pattern_revolved_silhouette(
             shape, origin=(0, 0, 0), degree=sector_degree, n_shapes=n_seg_p_sector
         )
     else:
-        if seg_split_geom == 'radial':
+        if seg_split_geom == "radial":
             volume = revolve_shape(
                 face, base=(0, 0, 0), direction=(0, 0, 1), degree=sector_degree
             )
@@ -234,7 +238,9 @@ def pattern_revolved_silhouette(
             volume = revolve_shape(
                 face, base=(0, 0, 0), direction=(0, 0, 1), degree=sector_degree
             )
-            gaps = _generate_parallel_gap_volumes(face, n_seg_p_sector, n_sectors, gap, proportion)
+            gaps = _generate_parallel_gap_volumes(
+                face, n_seg_p_sector, n_sectors, gap, proportion
+            )
             shapes = boolean_cut(volume, gaps)
     return _order_shapes_anticlockwise(shapes)
 
@@ -321,9 +327,14 @@ def _generate_gap_volumes(face, n_seg_p_sector, n_sectors, gap):
     )
     return gap_volumes
 
+
 def _generate_parallel_gap_volumes(
-        face:BluemiraFace, n_seg_p_sector: int, n_sectors: int, gap: float, proportion:float,
-    ):
+    face: BluemiraFace,
+    n_seg_p_sector: int,
+    n_sectors: int,
+    gap: float,
+    proportion: float,
+):
     """
     Generate the gap volumes for a parallel split case
     """
@@ -341,25 +352,21 @@ def _generate_parallel_gap_volumes(
     gap_volume = extrude_shape(bb_face, (0, gap, 0))
     degree = 360 / n_sectors
     # degree += degree / n_seg_p_sector
-    gap_volumes = circular_pattern(
-        gap_volume, degree= 2 * degree, n_shapes=2
-    )
-    c = bb.x_min * np.sqrt(2 * (1 - np.cos(np.pi * 2 / n_sectors)))    # chord length of in-board arc (r = bb.x_min)
+    gap_volumes = circular_pattern(gap_volume, degree=2 * degree, n_shapes=2)
+    c = bb.x_min * np.sqrt(
+        2 * (1 - np.cos(np.pi * 2 / n_sectors))
+    )  # chord length of in-board arc (r = bb.x_min)
     c *= proportion
     parallel_gap_volume = gap_volume.deepcopy()
-    parallel_gap_volume.rotate(degree = (180/n_sectors))
-    # if >2 segments, apply offset it to one end of the chord 
+    parallel_gap_volume.rotate(degree=(180 / n_sectors))
+    # if >2 segments, apply offset it to one end of the chord
     # and linear_pattern through (number of segments - 1)
     if n_seg_p_sector > 2:
         print("parallel cuts")
-        parallel_gap_volume.translate((0, -c/2, 0))
+        parallel_gap_volume.translate((0, -c / 2, 0))
         n_cuts = n_seg_p_sector - 1
 
-        shapes = linear_pattern(
-            parallel_gap_volume,
-            (0, c/(n_cuts-1), 0), 
-            n_cuts
-        )
+        shapes = linear_pattern(parallel_gap_volume, (0, c / (n_cuts - 1), 0), n_cuts)
         #
         # shapes = [parallel_gap_volume]
         # for i in range(1, n_cuts):
@@ -534,7 +541,7 @@ def build_sectioned_xyz(
             direction=(0, 0, 1),
             degree=sector_degree if enable_sectioning else min(359, degree),
         )
-        shape.rotate(degree= -sector_degree/2)
+        shape.rotate(degree=-sector_degree / 2)
         # shape.rotate(degree = sector_degree)
         body = PhysicalComponent(nam, shape, material=mat)
         apply_component_display_options(body, color=color)

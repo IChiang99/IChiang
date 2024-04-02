@@ -638,7 +638,7 @@ class TFCoilBuilder(Builder):
         """
         wp_solid = sweep_shape(self.wp_cross_section, self.centreline)
         comp_solid = wp_solid.deepcopy()
-        comp_solid.rotate(degree= -180/self.params.n_TF.value)
+        comp_solid.rotate(degree=-180 / self.params.n_TF.value)
         winding_pack = PhysicalComponent(self.WP, comp_solid)
 
         apply_component_display_options(winding_pack, color=BLUE_PALETTE["TF"][1])
@@ -657,7 +657,7 @@ class TFCoilBuilder(Builder):
             sweep_shape(ins_inner_face.boundary[0], self.centreline), wp_solid
         )[0]
         comp_solid = ins_solid.deepcopy()
-        comp_solid.rotate(degree= -180/self.params.n_TF.value)
+        comp_solid.rotate(degree=-180 / self.params.n_TF.value)
         insulation = PhysicalComponent(
             self.INS,
             comp_solid,
@@ -707,7 +707,7 @@ class TFCoilBuilder(Builder):
             case_solid, BluemiraSolid(ins_solid.boundary[0])
         )[0]
         comp_solid = case_solid_hollow.deepcopy()
-        comp_solid.rotate(degree= -180/self.params.n_TF.value)
+        comp_solid.rotate(degree=-180 / self.params.n_TF.value)
         casing = PhysicalComponent(self.CASING, comp_solid)
 
         apply_component_display_options(casing, color=BLUE_PALETTE["TF"][0])

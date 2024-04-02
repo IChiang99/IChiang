@@ -55,7 +55,12 @@ from bluemira.builders.thermal_shield import CryostatTSBuilder, VVTSBuilder
 from bluemira.equilibria.equilibrium import Equilibrium
 from bluemira.equilibria.run import Snapshot
 from bluemira.geometry.face import BluemiraFace
-from bluemira.geometry.tools import distance_to, interpolate_bspline, make_polygon, offset_wire
+from bluemira.geometry.tools import (
+    distance_to,
+    interpolate_bspline,
+    make_polygon,
+    offset_wire,
+)
 from bluemira.geometry.wire import BluemiraWire
 from eudemo.blanket import Blanket, BlanketBuilder, BlanketDesigner
 from eudemo.coil_structure import build_coil_structures_component
@@ -73,8 +78,8 @@ from eudemo.equilibria import (
     ReferenceFreeBoundaryEquilibriumDesigner,
 )
 from eudemo.ivc import design_ivc
-from eudemo.ivc.rm_tools import face_the_wire, scale_geometry
 from eudemo.ivc.divertor_silhouette import Divertor
+from eudemo.ivc.rm_tools import face_the_wire, scale_geometry
 from eudemo.maintenance.duct_connection import (
     TSEquatorialPortDuctBuilder,
     TSUpperPortDuctBuilder,
@@ -162,7 +167,7 @@ def build_plasma(params, build_config: Dict, eq: Equilibrium) -> Plasma:
     """Build EUDEMO plasma from an equilibrium."""
     lcfs_loop = eq.get_LCFS()
     lcfs_wire = interpolate_bspline({"x": lcfs_loop.x, "z": lcfs_loop.z}, closed=True)
-    lcfs_wire = scale_geometry(lcfs_wire,  scale_factor, 'x', origin=origin)
+    lcfs_wire = scale_geometry(lcfs_wire, scale_factor, "x", origin=origin)
     builder = PlasmaBuilder(params, build_config, lcfs_wire)
     return Plasma(builder.build())
 
@@ -194,18 +199,18 @@ def build_cryots(params, build_config, pf_kozs, tf_koz) -> CryostatThermalShield
     return CryostatThermalShield(cts_builder.build())
 
 
-# def assemble_thermal_shield(vv_thermal_shield, cryostat_thermal_shield):
-#     """
-#     Assemble the thermal shield component for the reactor.
-#     """
-#     component = Component(
-#         name="Thermal Shield",
-#         children=[vv_thermal_shield.component(), cryostat_thermal_shield.component()],
-#     )
-#     return ThermalShield(component)
+def assemble_thermal_shield(vv_thermal_shield, cryostat_thermal_shield):
+    """
+    Assemble the thermal shield component for the reactor.
+    """
+    component = Component(
+        name="Thermal Shield",
+        children=[vv_thermal_shield.component(), cryostat_thermal_shield.component()],
+    )
+    return ThermalShield(component)
 
 
-def build_divertor(params, build_config, div_silhouette:BluemiraFace) -> Divertor:
+def build_divertor(params, build_config, div_silhouette: BluemiraFace) -> Divertor:
     """Build the divertor given a silhouette of a sector."""
     builder = DivertorBuilder(params, build_config, div_silhouette)
     return Divertor(builder.build())
@@ -218,13 +223,25 @@ def build_blanket(
     blanket_face,
     r_inner_cut: float,
     cut_angle: float,
-    up_void
+    up_void,
 ) -> Blanket:
     """Build the blanket given a silhouette of a sector."""
     designer = BlanketDesigner(
-        params, blanket_boundary, blanket_face, up_void, r_inner_cut, cut_angle, build_config
+        params,
+        blanket_boundary,
+        blanket_face,
+        up_void,
+        r_inner_cut,
+        cut_angle,
+        build_config,
     )
-    ib_silhouette, ob_silhouette, bb_silhouette, split_geom, chimneys = designer.execute()
+    (
+        ib_silhouette,
+        ob_silhouette,
+        bb_silhouette,
+        split_geom,
+        chimneys,
+    ) = designer.execute()
     # scaled_ibb_wire = scale_geometry(BluemiraWire(ib_silhouette.wires), scale_factor, 'x', origin=origin)
     # ib_silhouette = face_the_wire(scaled_ibb_wire)
 
@@ -247,15 +264,15 @@ def build_blanket(
     # ob_silhouette = face_the_wire(scaled_obb_wire)
 
     builder = BlanketBuilder(
-        params, 
-        build_config, 
-        ib_silhouette, 
-        ob_silhouette, 
+        params,
+        build_config,
+        ib_silhouette,
+        ob_silhouette,
         bb_silhouette,
         split_geom,
         blanket_boundary,
         chimneys,
-        )
+    )
     return Blanket(builder.build())
 
 
@@ -316,20 +333,20 @@ def build_pf_coils(
     return PFCoil(component, coilset)
 
 
-# def build_coil_structures(
-#     params,
-#     build_config,
-#     tf_coil_xz_face,
-#     pf_coil_xz_wires,
-#     pf_coil_keep_out_zones,
-# ) -> CoilStructures:
-#     """
-#     Design and build the coil structures for the reactor.
-#     """
-#     component = build_coil_structures_component(
-#         params, build_config, tf_coil_xz_face, pf_coil_xz_wires, pf_coil_keep_out_zones
-#     )
-#     return CoilStructures(component)
+def build_coil_structures(
+    params,
+    build_config,
+    tf_coil_xz_face,
+    pf_coil_xz_wires,
+    pf_coil_keep_out_zones,
+) -> CoilStructures:
+    """
+    Design and build the coil structures for the reactor.
+    """
+    component = build_coil_structures_component(
+        params, build_config, tf_coil_xz_face, pf_coil_xz_wires, pf_coil_keep_out_zones
+    )
+    return CoilStructures(component)
 
 
 def build_upper_port(
@@ -398,65 +415,65 @@ def build_cryostat(params, build_config, cryostat_thermal_koz) -> Cryostat:
     return Cryostat(CryostatBuilder(params, build_config, *cryod.execute()).build())
 
 
-# def build_radiation_shield(params, build_config, cryostat_koz) -> RadiationShield:
-#     """
-#     Design and build the Radiation shield for the reactor.
-#     """
-#     return RadiationShield(
-#         RadiationShieldBuilder(params, build_config, BluemiraFace(cryostat_koz)).build()
-#     )
+def build_radiation_shield(params, build_config, cryostat_koz) -> RadiationShield:
+    """
+    Design and build the Radiation shield for the reactor.
+    """
+    return RadiationShield(
+        RadiationShieldBuilder(params, build_config, BluemiraFace(cryostat_koz)).build()
+    )
 
 
-# def build_cryostat_plugs(
-#     params, build_config, ts_ports, cryostat_xz_boundary: BluemiraFace
-# ):
-#     """
-#     Build the port plugs for the cryostat.
-#     """
-#     closest_faces = []
-#     for port in ts_ports:
-#         xyz = port.get_component("xyz")
-#         for child in xyz.children:
-#             if "voidspace" not in child.name:
-#                 port_xyz = child.shape.deepcopy()
-#                 port_xyz.rotate(degree=-180 / params.global_params.n_TF.value)
-#         faces = port_xyz.faces
-#         distances = [
-#             distance_to(f.center_of_mass, cryostat_xz_boundary)[0] for f in faces
-#         ]
-#         closest_face = faces[np.argmin(distances)]
-#         closest_faces.append(closest_face)
+def build_cryostat_plugs(
+    params, build_config, ts_ports, cryostat_xz_boundary: BluemiraFace
+):
+    """
+    Build the port plugs for the cryostat.
+    """
+    closest_faces = []
+    for port in ts_ports:
+        xyz = port.get_component("xyz")
+        for child in xyz.children:
+            if "voidspace" not in child.name:
+                port_xyz = child.shape.deepcopy()
+                port_xyz.rotate(degree=-180 / params.global_params.n_TF.value)
+        faces = port_xyz.faces
+        distances = [
+            distance_to(f.center_of_mass, cryostat_xz_boundary)[0] for f in faces
+        ]
+        closest_face = faces[np.argmin(distances)]
+        closest_faces.append(closest_face)
 
-#     outer_wires = [cf.boundary[0].deepcopy() for cf in closest_faces]
+    outer_wires = [cf.boundary[0].deepcopy() for cf in closest_faces]
 
-#     builder = CryostatPortPlugBuilder(
-#         params, build_config, outer_wires, cryostat_xz_boundary
-#     )
-#     return builder.build() 
+    builder = CryostatPortPlugBuilder(
+        params, build_config, outer_wires, cryostat_xz_boundary
+    )
+    return builder.build()
 
 
-# def build_radiation_plugs(params, build_config, cr_ports, radiation_xz_boundary):
-#     """
-#     Build the port plugs for the radiation shield.
-#     """
-#     closest_faces = []
-#     xyz = cr_ports.get_component("xyz")
-#     for child in xyz.children:
-#         if "voidspace" not in child.name:
-#             port_xyz = child.shape.deepcopy()
-#             port_xyz.rotate(degree=-180 / params.global_params.n_TF.value)
-#             faces = port_xyz.faces
-#             distances = [
-#                 distance_to(f.center_of_mass, radiation_xz_boundary)[0] for f in faces
-#             ]
-#             closest_face = faces[np.argmin(distances)]
-#             closest_faces.append(closest_face)
-#     outer_wires = [cf.boundary[0].deepcopy() for cf in closest_faces]
+def build_radiation_plugs(params, build_config, cr_ports, radiation_xz_boundary):
+    """
+    Build the port plugs for the radiation shield.
+    """
+    closest_faces = []
+    xyz = cr_ports.get_component("xyz")
+    for child in xyz.children:
+        if "voidspace" not in child.name:
+            port_xyz = child.shape.deepcopy()
+            port_xyz.rotate(degree=-180 / params.global_params.n_TF.value)
+            faces = port_xyz.faces
+            distances = [
+                distance_to(f.center_of_mass, radiation_xz_boundary)[0] for f in faces
+            ]
+            closest_face = faces[np.argmin(distances)]
+            closest_faces.append(closest_face)
+    outer_wires = [cf.boundary[0].deepcopy() for cf in closest_faces]
 
-#     builder = RadiationPortPlugBuilder(
-#         params, build_config, outer_wires, radiation_xz_boundary
-#     )
-#     return builder.build()
+    builder = RadiationPortPlugBuilder(
+        params, build_config, outer_wires, radiation_xz_boundary
+    )
+    return builder.build()
 
 
 if __name__ == "__main__":
@@ -502,13 +519,13 @@ if __name__ == "__main__":
         equilibrium=reference_eq,
     )
 
-    ''' Here is the scaling code to change '''        
+    """ Here is the scaling code to change """
     scale_factor = 1.0
-    origin = [ivc_shapes.outer_boundary.bounding_box.x_min, 0., 0.]
+    origin = [ivc_shapes.outer_boundary.bounding_box.x_min, 0.0, 0.0]
     reactor.plasma = build_plasma(
-    reactor_config.params_for("Plasma"),
-    reactor_config.config_for("Plasma"),
-    reference_eq,
+        reactor_config.params_for("Plasma"),
+        reactor_config.config_for("Plasma"),
+        reference_eq,
     )
 
     reactor.vacuum_vessel = build_vacuum_vessel(
@@ -529,8 +546,10 @@ if __name__ == "__main__":
         ivc_shapes.blanket_face,
     )
     upper_port_koz_xz, r_inner_cut, cut_angle = upper_port_designer.execute()
-    ''' This is a temporary bodge to edit UP xz profile'''
-    outer_vv = scale_geometry(ivc_shapes.outer_boundary, scale_factor, 'x', origin=origin)
+    """ This is a temporary bodge to edit UP xz profile"""
+    outer_vv = scale_geometry(
+        ivc_shapes.outer_boundary, scale_factor, "x", origin=origin
+    )
     UP_x_min = outer_vv.bounding_box.x_min + 1.479
     UP_x_max = outer_vv.bounding_box.x_max + 0.029
     x = [UP_x_min, UP_x_max, UP_x_max, UP_x_min]
@@ -540,16 +559,11 @@ if __name__ == "__main__":
     # scaled_wire = scale_geometry(BluemiraWire(upper_port_koz_xz.wires), scale_factor, 'x', origin=origin)
     # upper_port_koz_xz = face_the_wire(scaled_wire)
 
-    # ''' Trying to output a O-shaped blanket'''
-    # outer = scale_geometry(ivc_shapes.outer_boundary, scale_factor, 'x', origin=origin)
-    # inner = scale_geometry(ivc_shapes.inner_boundary, scale_factor, 'x', origin=origin)
-    # whole_profile = BluemiraFace([outer, inner], "whole_profile")
-
     up_ro = upper_port_koz_xz.bounding_box.x_max
     x_min = ivc_shapes.outer_boundary.bounding_box.x_min
     semisector_angle = np.deg2rad(180 / reactor.n_sectors)
-    curve_dx = (x_min + 0.02) - ((x_min + 0.02)*np.cos(semisector_angle))
-    split_radius = float(x_min + (up_ro - x_min - 0.02 - curve_dx)/2)
+    curve_dx = (x_min + 0.02) - ((x_min + 0.02) * np.cos(semisector_angle))
+    split_radius = float(x_min + (up_ro - x_min - 0.02 - curve_dx) / 2)
     # vv_void = reactor.vacuum_vessel.component().get_component("xyz").get_component("Sector 1").get_component("Vessel voidspace 1").shape
 
     vv_thermal_shield = build_vacuum_vessel_thermal_shield(
@@ -591,7 +605,6 @@ if __name__ == "__main__":
         reactor.equilibria,
         reactor.tf_coils.xz_outer_boundary(),
         pf_coil_keep_out_zones=[
-            # pf2_koz,
             upper_port_koz_xz,
             eq_port_koz_xz,
             lower_port_koz_xz,
@@ -660,8 +673,8 @@ if __name__ == "__main__":
 
     reactor.vacuum_vessel.add_ports(
         [
-            vv_upper_port, 
-            vv_eq_port, 
+            vv_upper_port,
+            vv_eq_port,
             vv_lower_port,
         ],
         n_TF=reactor_config.global_params.n_TF.value,
@@ -696,19 +709,23 @@ if __name__ == "__main__":
     #     n_TF=reactor_config.global_params.n_TF.value,
     # )
 
-    up_boundary = vv_upper_port.get_component("xy").get_component(vv_upper_port.name + " voidspace").shape
+    up_boundary = (
+        vv_upper_port.get_component("xy")
+        .get_component(vv_upper_port.name + " voidspace")
+        .shape
+    )
 
     reactor.blanket = build_blanket(
         reactor_config.params_for("Blanket"),
         reactor_config.config_for("Blanket"),
-        ivc_shapes.inner_boundary,
+        ivc_shapes.inner_boundary.close(),
         ivc_shapes.blanket_face,
         # r_inner_cut,        # Editted to shift the cut in-board
         split_radius,
         cut_angle,
         # whole_profile,
         # vv_void,
-        up_boundary
+        up_boundary,
     )
 
     # from bluemira.display import show_cad
@@ -725,18 +742,19 @@ if __name__ == "__main__":
     components = [
         reactor.plasma,
         reactor.vacuum_vessel,
-        reactor.blanket, 
-        reactor.pf_coils, 
+        reactor.blanket,
+        reactor.pf_coils,
         reactor.tf_coils,
-        ]
-    
-    reactor.save_cad(with_components= components,
-                     n_sectors=1, 
-                     filename="rotation_test",
-                     cad_format='stp', 
-                    #  directory="\BM_aspect_ratio_study"
-                    )
-    
+    ]
+
+    reactor.save_cad(
+        with_components=components,
+        n_sectors=1,
+        filename="baseline",
+        cad_format="stp",
+        #  directory="\BM_aspect_ratio_study"
+    )
+
     # print("Saving complete - running show_cad")
     # reactor.show_cad("xz")
     # reactor.show_cad(n_sectors=2)
@@ -746,4 +764,4 @@ if __name__ == "__main__":
     # sspc_solver.model.plot()
     # plt.show()
     # plt.savefig("SSPC.png")
-    print('Bluemira Run Complete - Have a nice day!')
+    print("Bluemira Run Complete - Have a nice day!")

@@ -24,6 +24,7 @@ Builder for making a parameterised EU-DEMO vacuum vessel.
 """
 from dataclasses import dataclass
 from typing import Dict, List, Type, Union
+
 from matplotlib import pyplot as plt
 
 from bluemira.base.builder import Builder, ComponentManager
@@ -186,7 +187,7 @@ class VacuumVesselBuilder(Builder):
         )
 
         # mod_inner_vv = vv_koz_modifier(inner_vv, 80.0)
-        
+
         outer_vv = varied_offset(
             # mod_inner_vv,
             inner_vv,
@@ -197,15 +198,15 @@ class VacuumVesselBuilder(Builder):
             num_points=300,
         )
 
-        ''' Here is the scaling code to change '''
+        """ Here is the scaling code to change """
 
         scale_factor = 1.0
-        origin = [self.ivc_koz.bounding_box.x_min, 0., 0.]
+        origin = [self.ivc_koz.bounding_box.x_min, 0.0, 0.0]
         # origin = [self.ivc_koz.center_of_mass[0], 0., self.ivc_koz.center_of_mass[2]]
         # inner_vv = scale_geometry(mod_inner_vv, scale_factor, 'x', origin=origin)
 
-        inner_vv = scale_geometry(inner_vv, scale_factor, 'x', origin=origin)
-        outer_vv = scale_geometry(outer_vv, scale_factor, 'x', origin=origin)
+        inner_vv = scale_geometry(inner_vv, scale_factor, "x", origin=origin)
+        outer_vv = scale_geometry(outer_vv, scale_factor, "x", origin=origin)
 
         inner_vv = force_wire_to_spline(inner_vv, n_edges_max=100)
         outer_vv = force_wire_to_spline(outer_vv, n_edges_max=100)

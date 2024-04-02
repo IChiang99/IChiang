@@ -142,7 +142,7 @@ class UpperPortOP(OptimisationProblem):
         co = self.get_outer_cut_point(ci, gamma)[0]
         c1 = (self.r_ob_max - co + self.c_rm) - (ro - co)
         c2 = (ci - self.r_ib_min) - (ro - ci + self.c_rm)
-        c3 = (ri + 0.35 * abs(ci - self.r_ib_min)) - ci      # change factor to 0.2
+        c3 = (ri + 0.35 * abs(ci - self.r_ib_min)) - ci  # change factor to 0.2
         return np.array([c1, c2, c3])
 
     def get_outer_cut_point(self, ci: float, gamma: float):
@@ -195,7 +195,9 @@ class UpperPortKOZDesignerParams(ParameterFrame):
     """Blanket outboard thickness [m]."""
 
 
-class UpperPortKOZDesigner(Designer[Tuple[BluemiraFace, float, float]]): # append BluemiraFace to start for add. koz
+class UpperPortKOZDesigner(
+    Designer[Tuple[BluemiraFace, float, float]]
+):  # append BluemiraFace to start for add. koz
     """Upper Port keep-out zone designer."""
 
     param_cls = UpperPortKOZDesignerParams
