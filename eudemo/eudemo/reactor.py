@@ -234,7 +234,8 @@ def build_blanket(
         params,
         scaled_blanket_boundary,
         face_scaler(blanket_face),
-        face_scaler(up_void),
+        # blanket_face,
+        up_void,
         r_inner_cut,
         cut_angle,
         build_config,
@@ -266,12 +267,6 @@ def build_blanket(
 
     # scaled_obb_wire = scale_geometry(BluemiraWire(ob_silhouette.wires), scale_factor, "x", origin=origin)
     # ob_silhouette = face_the_wire(scaled_obb_wire)
-    anti_origin_vector = tuple([-i for i in origin])
-    origin_vector = tuple(origin)
-    for chimney in chimneys :
-        chimney.translate(anti_origin_vector)
-        chimney.scale(scale_factor)
-        chimney.translate(origin_vector)
 
     builder = BlanketBuilder(
         params,
@@ -757,7 +752,7 @@ if __name__ == "__main__":
     reactor.save_cad(
         with_components=components,
         n_sectors=1,
-        filename="chimney_aspects",
+        filename="chimneyed_baseline",
         cad_format="stp",
         #  directory="\BM_aspect_ratio_study"
     )

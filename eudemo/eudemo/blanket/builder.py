@@ -259,13 +259,13 @@ class BlanketBuilder(Builder):
         return segments
 
     def chimney_builder(
-        self, profiles: Union[BluemiraFace, List[BluemiraFace]], vv_void: BluemiraSolid
+        self, xy_profiles: Union[BluemiraFace, List[BluemiraFace]], vv_void: BluemiraSolid
     ) -> List[BluemiraSolid]:
-        """Turns chimney xy into a list of chimney solids"""
-        if isinstance(profiles, BluemiraFace):
-            profiles = [profiles]
+        """Turns chimney xy profiles into a list of chimney solids"""
+        if isinstance(xy_profiles, BluemiraFace):
+            xy_profiles = [xy_profiles]
         chimneys = []
-        for face in profiles:
+        for face in xy_profiles:
             # make faces into prismatic solids
             height = vv_void.center_of_mass[2] - face.center_of_mass[2]
             vec = (0.0, 0.0, height)
