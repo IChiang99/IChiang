@@ -219,18 +219,22 @@ def build_divertor(params, build_config, div_silhouette: BluemiraFace) -> Divert
 def build_blanket(
     params,
     build_config: Dict,
-    blanket_boundary,
-    blanket_face,
+    blanket_boundary: BluemiraWire,
+    blanket_face: BluemiraFace,
     r_inner_cut: float,
     cut_angle: float,
     up_void,
 ) -> Blanket:
     """Build the blanket given a silhouette of a sector."""
+    face_scaler = lambda a: face_the_wire(
+        scale_geometry(BluemiraWire(a.wires), scale_factor, origin= origin)
+    )
+    scaled_blanket_boundary = scale_geometry(blanket_boundary, scale_factor, origin= origin, _closed = False)
     designer = BlanketDesigner(
         params,
-        blanket_boundary,
-        blanket_face,
-        up_void,
+        scaled_blanket_boundary,
+        face_scaler(blanket_face),
+        face_scaler(up_void),
         r_inner_cut,
         cut_angle,
         build_config,
@@ -242,7 +246,7 @@ def build_blanket(
         split_geom,
         chimneys,
     ) = designer.execute()
-    # scaled_ibb_wire = scale_geometry(BluemiraWire(ib_silhouette.wires), scale_factor, 'x', origin=origin)
+    # scaled_ibb_wire = scale_geometry(BluemiraWire(ib_silhouette.wires), scale_factor, "x", origin=origin)
     # ib_silhouette = face_the_wire(scaled_ibb_wire)
 
     # # Option 1 - interpolate bspline
@@ -260,8 +264,14 @@ def build_blanket(
     # wires[1] = discretize_spline_geom(edges[-1], 20, closed_= False, reversed=False)
     # wire = BluemiraWire(wires)
 
-    # scaled_obb_wire = scale_geometry(BluemiraWire(ob_silhouette.wires), scale_factor, 'x', origin=origin)
+    # scaled_obb_wire = scale_geometry(BluemiraWire(ob_silhouette.wires), scale_factor, "x", origin=origin)
     # ob_silhouette = face_the_wire(scaled_obb_wire)
+    anti_origin_vector = tuple([-i for i in origin])
+    origin_vector = tuple(origin)
+    for chimney in chimneys :
+        chimney.translate(anti_origin_vector)
+        chimney.scale(scale_factor)
+        chimney.translate(origin_vector)
 
     builder = BlanketBuilder(
         params,
@@ -270,7 +280,7 @@ def build_blanket(
         ob_silhouette,
         bb_silhouette,
         split_geom,
-        blanket_boundary,
+        scaled_blanket_boundary,
         chimneys,
     )
     return Blanket(builder.build())
@@ -520,7 +530,7 @@ if __name__ == "__main__":
     )
 
     """ Here is the scaling code to change """
-    scale_factor = 1.0
+    scale_factor = 1.0691
     origin = [ivc_shapes.outer_boundary.bounding_box.x_min, 0.0, 0.0]
     reactor.plasma = build_plasma(
         reactor_config.params_for("Plasma"),
@@ -556,7 +566,7 @@ if __name__ == "__main__":
     z = [0, 0, 10, 10]
     upper_port_koz_xz = BluemiraFace(make_polygon({"x": x, "y": 0, "z": z}, closed=True))
     # ''' This scales the Upper Port in the x-z plane '''
-    # scaled_wire = scale_geometry(BluemiraWire(upper_port_koz_xz.wires), scale_factor, 'x', origin=origin)
+    # scaled_wire = scale_geometry(BluemiraWire(upper_port_koz_xz.wires), scale_factor, "x", origin=origin)
     # upper_port_koz_xz = face_the_wire(scaled_wire)
 
     up_ro = upper_port_koz_xz.bounding_box.x_max
@@ -564,7 +574,6 @@ if __name__ == "__main__":
     semisector_angle = np.deg2rad(180 / reactor.n_sectors)
     curve_dx = (x_min + 0.02) - ((x_min + 0.02) * np.cos(semisector_angle))
     split_radius = float(x_min + (up_ro - x_min - 0.02 - curve_dx) / 2)
-    # vv_void = reactor.vacuum_vessel.component().get_component("xyz").get_component("Sector 1").get_component("Vessel voidspace 1").shape
 
     vv_thermal_shield = build_vacuum_vessel_thermal_shield(
         reactor_config.params_for("Thermal shield"),
@@ -709,6 +718,7 @@ if __name__ == "__main__":
     #     n_TF=reactor_config.global_params.n_TF.value,
     # )
 
+    scaled_split_radius = origin[0] + (split_radius - origin[0]) * scale_factor
     up_boundary = (
         vv_upper_port.get_component("xy")
         .get_component(vv_upper_port.name + " voidspace")
@@ -718,13 +728,10 @@ if __name__ == "__main__":
     reactor.blanket = build_blanket(
         reactor_config.params_for("Blanket"),
         reactor_config.config_for("Blanket"),
-        ivc_shapes.inner_boundary.close(),
+        ivc_shapes.inner_boundary,
         ivc_shapes.blanket_face,
-        # r_inner_cut,        # Editted to shift the cut in-board
-        split_radius,
+        scaled_split_radius,
         cut_angle,
-        # whole_profile,
-        # vv_void,
         up_boundary,
     )
 
@@ -750,7 +757,7 @@ if __name__ == "__main__":
     reactor.save_cad(
         with_components=components,
         n_sectors=1,
-        filename="baseline",
+        filename="chimney_aspects",
         cad_format="stp",
         #  directory="\BM_aspect_ratio_study"
     )

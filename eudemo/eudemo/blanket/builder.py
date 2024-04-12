@@ -50,6 +50,7 @@ from bluemira.geometry.tools import (
     slice_shape,
 )
 from bluemira.geometry.wire import BluemiraWire
+from eudemo.ivc.rm_tools import face_the_wire, scale_geometry
 
 
 @dataclass
@@ -118,6 +119,7 @@ class BlanketBuilder(Builder):
         Build the blanket component.
         """
         segments = self.get_segments(self.ib_silhouette, self.ob_silhouette)
+        self.vv_void.close()
         solid_void = pattern_revolved_silhouette(
             BluemiraFace([offset_wire(self.vv_void, self.params.c_rm.value)]), 
             1, 
@@ -131,11 +133,13 @@ class BlanketBuilder(Builder):
             vv_void,
         )
         whole = self.get_whole_3D(self.bb_silhouette, chimney_solids)
+        xyz = self.build_new_xyz(whole, degree=0)
         return self.component_tree(
-            xz=[self.build_xz(self.ib_silhouette, self.ob_silhouette)],
-            xy=self.build_xy(segments),
+            xz = [self.build_xz(self.ib_silhouette, self.ob_silhouette)],
+            xy = self.build_xy(xyz[0].children[0].children),
+            # xy = self.build_xy(segments)
             # xyz = self.build_xyz(segments, degree=0),
-            xyz=self.build_new_xyz(whole, degree=0),
+            xyz = xyz,
         )
 
     def build_xz(self, ibs_silhouette: BluemiraFace, obs_silhouette: BluemiraFace):

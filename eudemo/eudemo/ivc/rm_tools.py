@@ -34,7 +34,7 @@ from bluemira.geometry.wire import BluemiraWire
 from bluemira.geometry.face import BluemiraFace
 
 
-def scale_geometry(profile:BluemiraWire, scale:float, dir:str = 'x', origin:list = [0., 0., 0.]) -> BluemiraWire:
+def scale_geometry(profile:BluemiraWire, scale:float, dir:str = 'x', origin:list = [0., 0., 0.], _closed = True) -> BluemiraWire:
     """
     Scales a given BluemiraWire by a given scale factor along an axis from a point
 
@@ -53,7 +53,7 @@ def scale_geometry(profile:BluemiraWire, scale:float, dir:str = 'x', origin:list
     if dir == 'z':
         datum = origin[2]
         z = [(scale * (i - datum)) + datum for i in z]
-    new_profile = BluemiraWire(make_polygon({"x": x, "y": y, "z": z}, closed=True))
+    new_profile = BluemiraWire(make_polygon({"x": x, "y": y, "z": z}, closed=_closed))
     return new_profile
 
 def face_the_wire(profile:BluemiraWire) -> BluemiraFace:

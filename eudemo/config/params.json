@@ -291,14 +291,14 @@
     "long_name": "Non-inductive current drive fraction"
   },
   "fw_a_max": {
-    "value": 5,
+    "value": 10,
     "unit": "degree",
     "source": "Input",
     "long_name": "Maximum panel angle",
     "description": "Maximum turning angle (clockwise tail-to-tail angle) between adjacent first wall panels"
   },
   "fw_dL_min": {
-    "value": 0.02,
+    "value": 0.05,
     "source": "Input",
     "unit": "meter",
     "long_name": "Minimum panel length",
