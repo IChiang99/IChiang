@@ -147,7 +147,7 @@ class BlanketDesigner(Designer[Tuple[BluemiraFace, BluemiraFace]]):
         split_geom = self._make_cutting_face()
         split_geom.translate((0.0, 0.0, -0.2))
         # Chimney xy profiles
-        chimney_profiles = self.design_chimney_xy(self.ch_bound, cut_ob, z_max=8.0)
+        chimney_profiles = self.design_chimney_xy(self.ch_bound, segments.outboard, z_max=8.0)
         return cut_ib, cut_ob, cut_bb[0], split_geom, chimney_profiles
 
     def segment_blanket(self) -> BlanketSegments:
@@ -252,10 +252,12 @@ class BlanketDesigner(Designer[Tuple[BluemiraFace, BluemiraFace]]):
             raise Warning("Insufficient space on OB chimney for interface")
         # if OB COG is too close to outer wall
         if (r_max - cog_x) < interface_width:
+            bluemira_warn("The OB COG is too close to the outer wall. Interface width = ", interface_width)
             x_pairs.append([r_split, r_max - (2 * interface_width)])
         else:
             # if OB COG too close to split point
             if (cog_x - r_split) < interface_width:
+                bluemira_warn("The OB COG is too close to the split point.")
                 x_pairs.append([r_split + (2 * interface_width), r_max])
             else:
                 x_pairs.append([r_split, cog_x - interface_width])

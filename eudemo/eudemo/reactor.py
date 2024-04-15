@@ -227,9 +227,9 @@ def build_blanket(
 ) -> Blanket:
     """Build the blanket given a silhouette of a sector."""
     face_scaler = lambda a: face_the_wire(
-        scale_geometry(BluemiraWire(a.wires), scale_factor, origin= origin)
+        scale_geometry(BluemiraWire(a.wires), scale_factor, "x", origin= origin)
     )
-    scaled_blanket_boundary = scale_geometry(blanket_boundary, scale_factor, origin= origin, _closed = False)
+    scaled_blanket_boundary = scale_geometry(blanket_boundary, scale_factor, "x", origin= origin, _closed = False)
     designer = BlanketDesigner(
         params,
         scaled_blanket_boundary,
@@ -752,7 +752,7 @@ if __name__ == "__main__":
     reactor.save_cad(
         with_components=components,
         n_sectors=1,
-        filename="chimneyed_baseline",
+        filename="chimneys_width_pos6",
         cad_format="stp",
         #  directory="\BM_aspect_ratio_study"
     )
